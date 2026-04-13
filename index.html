@@ -2,143 +2,120 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>2ch風 掲示板（レトロデザイン再現）</title>
     <style>
-        /* --- 基本的な設定（レトロフォント・背景） --- */
-        body { 
-            font-family: "MS PGothic", "IPAMonaPGothic", sans-serif; 
-            background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAIklEQVQIW2NkQAKrVq36z8gAFWPAAn///gVb/P//f8YAAAAASUVORK5CYII='); /* レンガ調の背景パターン（簡易版） */
-            background-repeat: repeat;
-            background-color: #f1ebd8;
-            margin: 0;
-            padding: 0;
-            display: flex;
-        }
-
-        /* --- 左側のサイドバー（メニュー） --- */
-        #menu-bar {
-            width: 140px;
-            background: #fff;
-            border-right: 2px solid #aaa;
-            padding: 10px;
-            font-size: 12px;
-            color: #333;
-            min-height: 100vh;
-            line-height: 1.4;
-        }
-        #menu-bar h3 { font-size: 13px; margin: 10px 0 5px; color: #cc0000; border-bottom: 1px dashed #ccc; }
-        #menu-bar a { text-decoration: none; color: blue; display: block; }
-        #menu-bar a:hover { color: red; }
-
-        /* --- メインコンテンツ（スレッドエリア） --- */
-        #main-view {
-            flex: 1;
-            padding: 20px;
-            font-size: 16px;
-        }
-
-        /* --- スレッドの枠 --- */
-        .thread-box {
-            background-color: #efefef;
-            border: 2px solid #aaa;
-            padding: 10px;
-            margin-bottom: 20px;
-        }
-
-        /* --- スレッドタイトル（赤色） --- */
-        .thread-title {
-            color: #cc0000;
-            font-size: 18px;
-            font-weight: bold;
-            border-bottom: 1px solid #cc0000;
-            padding-bottom: 5px;
-            margin-bottom: 15px;
-        }
-
-        /* --- レス一行目（名前・日付・ID） --- */
-        .post-header {
-            font-size: 14px;
-            color: #333;
-            margin-bottom: 3px;
-        }
-        .post-header b { color: green; } /* 名前は緑色 */
-        .post-header .id-text { color: red; } /* IDは赤色 */
-
-        /* --- レス本文 --- */
-        .post-body {
-            margin-left: 15px;
-            margin-bottom: 15px;
-            line-height: 1.4;
-        }
-
-        /* --- 投稿フォーム --- */
-        .form-area {
-            background-color: #fff;
-            border: 1px solid #aaa;
-            padding: 10px;
-            margin-top: 20px;
-            font-size: 14px;
-        }
-        .form-area textarea {
-            width: 500px;
-            height: 100px;
-            display: block;
-            margin-top: 5px;
-        }
+        body { background-color: #f1ebd8; background-image: url('https://www.2ch.sc/2ch_common/p_brick.gif'); font-family: "MS PGothic", sans-serif; margin: 10px; }
+        .thread-box { background: #efefef; border: 1px solid #aaa; padding: 10px; margin-bottom: 30px; }
+        .title { color: #cc0000; font-size: 1.2rem; font-weight: bold; margin-bottom: 10px; }
+        .post { margin-bottom: 15px; font-size: 15px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        .post b { color: green; }
+        .post-id { color: #333; }
+        .form-area { border: 1px solid #aaa; background: #fff; padding: 15px; margin-top: 10px; box-shadow: 2px 2px 0 #888; }
+        .btn-post { padding: 5px 15px; cursor: pointer; background: #eee; border: 1px solid #888; }
+        table.admin-table { width: 100%; border-collapse: collapse; background: white; color: black; }
+        table.admin-table th, table.admin-table td { border: 1px solid #aaa; padding: 8px; font-size: 12px; }
     </style>
 </head>
 <body>
 
-<div id="menu-bar">
-    <h3>掲示板メニュー</h3>
-    <a href="index.html">■トップに戻る</a>
-    <h3>カテゴリー</h3>
-    <a href="#">ニュース</a>
-    <a href="#">実況</a>
-    <a href="#">雑談</a>
-    <h3>ツール</h3>
-    <a href="admin.html">管理者画面</a>
-</div>
+<div id="app"></div>
 
-<div id="main-view">
+<script>
+    const STORAGE_KEY = '2ch_hybrid_db';
+    let db = JSON.parse(localStorage.getItem(STORAGE_KEY)) || { threads: {} };
 
-    <div class="thread-box">
-        <div class="thread-title">【1:3】 スレ立てできる？</div>
+    // 1日限定の4桁ID生成
+    function generateID(seed) {
+        const date = new Date().toISOString().split('T')[0];
+        let hash = 0;
+        const str = seed + date;
+        for (let i = 0; i < str.length; i++) {
+            hash = ((hash << 5) - hash) + str.charCodeAt(i);
+            hash |= 0;
+        }
+        return Math.abs(hash).toString(36).substring(0, 4).toUpperCase();
+    }
 
-        <div class="post">
-            <div class="post-header">
-                1 名前：<b>名無しって何ですか？</b>：2026/04/02(木) 13:22:32.98 <span class="id-text">ID:zohgFVDC.net</span>
-            </div>
-            <div class="post-body">どうだろ？</div>
-        </div>
+    function render() {
+        const params = new URLSearchParams(window.location.search);
+        const tId = params.get('t');
+        const mode = params.get('mode');
+        const app = document.getElementById('app');
 
-        <div class="post">
-            <div class="post-header">
-                2 名前：<b>名無しって何ですか？</b>：2026/04/02(木) 13:46:20.82 <span class="id-text">ID:zohgFVDC.net</span>
-            </div>
-            <div class="post-body">てすと</div>
-        </div>
+        // --- 管理者モード ---
+        if (mode === 'admin') {
+            let html = `<h2>掲示板 管理パネル</h2><table class="admin-table"><tr><th>ID</th><th>タイトル</th><th>レス</th><th>操作</th></tr>`;
+            Object.keys(db.threads).sort().forEach(id => {
+                html += `<tr><td>${id}</td><td>${db.threads[id].title}</td><td>${db.threads[id].posts.length}</td>
+                        <td><button onclick="deleteThread('${id}')">削除</button></td></tr>`;
+            });
+            html += `</table><br><a href="iyan.html">戻る</a>`;
+            app.innerHTML = html;
+            return;
+        }
 
-        <div class="form-area">
-            <input type="button" value="書き込む">
-            名前： <input type="text" style="width: 150px;">
-            E-mail： <input type="text" style="width: 150px;">
-            <textarea placeholder="ここに書き込みます"></textarea>
-        </div>
-    </div>
+        // --- スレッド内表示 ---
+        if (tId && db.threads[tId]) {
+            const t = db.threads[tId];
+            let html = `<div class="thread-box"><div class="title">【${tId}】 ${t.title}</div>`;
+            t.posts.forEach((p, i) => {
+                html += `<div class="post">${i+1} 名前：<b>名無しさん</b>：${p.time} <span class="post-id">ID:${p.uid}</span><br><br>${p.content.replace(/\n/g, '<br>')}</div>`;
+            });
+            html += `
+                <div class="form-area">
+                    <button class="btn-post" onclick="addPost('${tId}')">書き込む</button>
+                    名前：<input id="name" type="text" size="15"> E-mail：<input id="mail" type="text" size="15" value="sage">
+                    <textarea id="msg" style="width:98%; height:100px; margin-top:10px;"></textarea>
+                </div>
+                <br><a href="iyan.html">■掲示板トップへ戻る</a></div>`;
+            app.innerHTML = html;
+        } else {
+            // --- トップ画面 (スレッド一覧) ---
+            let html = `<h2>スレッド一覧</h2>`;
+            Object.keys(db.threads).sort((a,b) => b-a).forEach(id => {
+                html += `<a href="?t=${id}" style="color:blue; font-weight:bold; display:block; margin-bottom:8px;">■${db.threads[id].title} (${db.threads[id].posts.length})</a>`;
+            });
+            html += `
+                <div class="form-area" style="margin-top:40px;">
+                    <h3>新規スレ作成</h3>
+                    タイトル：<input id="t-title" type="text" style="width:70%;"><br><br>
+                    <button class="btn-post" onclick="createThread()">スレッド作成</button>
+                </div>`;
+            app.innerHTML = html;
+        }
+    }
 
-    <div class="thread-box">
-        <div class="thread-title">【2:4】 4月から高2陽キャ男子だけどなんか質問ある</div>
-        
-        <div class="post">
-            <div class="post-header">
-                1 名前：<b>名無しさん</b>：2026/04/03(金) 10:00:00.00 <span class="id-text">ID:abc12345.net</span>
-            </div>
-            <div class="post-body">質問に答えるぜ</div>
-        </div>
-    </div>
+    window.createThread = () => {
+        const title = document.getElementById('t-title').value;
+        if(!title) return;
+        const id = Math.floor(Date.now() / 1000); 
+        db.threads[id] = { title: title, posts: [] };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+        window.location.search = `?t=${id}`;
+    };
 
-</div>
+    window.addPost = (tId) => {
+        const content = document.getElementById('msg').value;
+        if(!content) return;
+        db.threads[tId].posts.push({
+            content,
+            uid: generateID(Math.random().toString()),
+            time: new Date().toLocaleString()
+        });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+        render();
+    };
 
+    window.deleteThread = (id) => {
+        if(confirm("削除しますか？")) {
+            delete db.threads[id];
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+            render();
+        }
+    };
+
+    render();
+</script>
+</body>
+</html>
 </body>
 </html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>簡易2ch風システム</title>
+    <style>
+        body { font-family: "MS PGothic", sans-serif; background: #eee; }
+        .container { max-width: 700px; margin: auto; background: #fff; border: 1px solid #ccc; padding: 15px; }
+        .thread-link { display: block; padding: 5px; color: blue; text-decoration: none; }
+        .post { border-bottom: 1px solid #ccc; padding: 10px; }
+        .id-text { color: green; font-size: 0.8rem; }
+        .form-area { margin-top: 20px; background: #f9f9f9; padding: 10px; border: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+
+<div class="container" id="app">
+    </div>
+
+<script>
+    // --- データ処理 ---
+    const storageKey = 'my_bbs_data';
+    let db = JSON.parse(localStorage.getItem(storageKey)) || { threads: [] };
+
+    function saveDB() {
+        localStorage.setItem(storageKey, JSON.stringify(db));
+    }
+
+    // --- ID生成 (4桁) ---
+    function generateID() {
+        return Math.random().toString(36).substring(2, 6).toUpperCase();
+    }
+
+    // --- ルーティング (画面切り替え) ---
+    function render() {
+        const params = new URLSearchParams(window.location.search);
+        const threadId = params.get('t');
+        const app = document.getElementById('app');
+
+        if (threadId) {
+            // 【スレッド表示画面】
+            const thread = db.threads.find(t => t.id == threadId);
+            app.innerHTML = `<h1>${thread.title}</h1><a href="index.html">一覧に戻る</a><hr>`;
+            
+            thread.posts.forEach((p, i) => {
+                app.innerHTML += `<div class="post">${i+1}: <b>名無しさん</b> : ${p.time} <span class="id-text">ID:${p.uid}</span><br>${p.content}</div>`;
+            });
+
+            app.innerHTML += `
+                <div class="form-area">
+                    <textarea id="msg" placeholder="書き込み内容"></textarea><br>
+                    <button onclick="addPost('${threadId}')">書き込む</button>
+                </div>`;
+        } else {
+            // 【スレッド一覧画面】
+            app.innerHTML = `<h1>掲示板スレッド一覧</h1>`;
+            db.threads.forEach(t => {
+                app.innerHTML += `<a class="thread-link" href="?t=${t.id}">■${t.title} (${t.posts.length})</a>`;
+            });
+            app.innerHTML += `
+                <div class="form-area">
+                    <input type="text" id="t-title" placeholder="新しいスレタイ"><br>
+                    <button onclick="createThread()">スレッド作成</button>
+                </div>`;
+        }
+    }
+
+    // --- アクション ---
+    window.createThread = () => {
+        const title = document.getElementById('t-title').value;
+        if(!title) return;
+        const newId = Date.now(); // 簡易的なURL用ID
+        db.threads.push({ id: newId, title: title, posts: [] });
+        saveDB();
+        window.location.search = `?t=${newId}`;
+    };
+
+    window.addPost = (tId) => {
+        const content = document.getElementById('msg').value;
+        if(!content) return;
+        const thread = db.threads.find(t => t.id == tId);
+        thread.posts.push({
+            content: content,
+            time: new Date().toLocaleString(),
+            uid: generateID()
+        });
+        saveDB();
+        render();
+    };
+
+    render();
+</script>
+</body>
+</html>

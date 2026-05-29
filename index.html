@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>個人用マルチ掲示板（参加者一覧表示・完全版）</title>
+	<title>個人用マルチ掲示板（ゾンビユーザー強制更新機能付き）</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<style>
@@ -53,7 +53,6 @@
 		.tool-btn { background: #f8f8f8; border: 1px solid #aaa; padding: 4px 12px; cursor: pointer; border-radius: 2px; color: #555; font-size: 13px; font-weight: normal;}
 		.tool-btn:hover { background: #e8e8e8; }
 		.tool-btn.active { background: #e0e0e0; border-color: #777; box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); }
-		.tool-img::before { content: "画像"; } .tool-pin::before { content: "位置"; } .tool-msg::before { content: "Aa"; } .tool-pen::before { content: "描画"; }
 		.ch2-submit { flex-grow: 1; font-weight: bold; font-size: 15px; padding: 6px; cursor: pointer; } .ch2-submit::before { content: "■ 投稿する"; }
 		
 		/* モーダル群 */
@@ -188,7 +187,10 @@
 	</div>
 	
 	<div id="voicha_live_panel">
-		<div style="font-weight:bold; margin-bottom:10px; font-size:15px; border-bottom:1px solid #ccc; padding-bottom:5px; color:#333;">📶 ぬとらじルーム</div>
+		<div style="font-weight:bold; margin-bottom:10px; font-size:15px; border-bottom:1px solid #ccc; padding-bottom:5px; color:#333; display:flex; justify-content:space-between; align-items:center;">
+			<span>📶 ぬとらじルーム</span>
+			<button class="modal-btn" id="btn_refresh_participants" style="font-size:10px; padding:3px 6px; cursor:pointer;" onclick="refreshParticipants()">🔄 更新</button>
+		</div>
 		<div id="voicha_live_status" style="margin-bottom: 10px; font-size:11px; color:#555; text-align:center;">システムに接続中...</div>
 		
 		<div id="voicha_participants_list"></div>
@@ -224,7 +226,6 @@
 		let isSpeakerMuted = false;
 		let amIBroadcaster = false; 
 		
-		// ★参加者一覧を管理するオブジェクト
 		let activeParticipants = {};
 
 		let db, doc_ref, setDoc_ref, onSnapshot_ref, collection_ref, addDoc_ref, deleteDoc_ref, query_ref, where_ref, getDocs_ref, getDoc_ref;
@@ -545,7 +546,7 @@
 		function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
 
 		// ==========================================
-		// WebRTC 生配信（参加者一覧機能付き）
+		// WebRTC 生配信（参加者一覧＆ゾンビ排除機能）
 		// ==========================================
 		let myVoichaUid = null; let voichaUnsubscribes = []; let peerConnections = {}; let liveStreamWebRTC = null; let liveAudioCtx, liveAnalyser, liveMicInterval;
 
@@ -569,6 +570,61 @@
 			container.innerHTML = html;
 		}
 
+		// ★ ゾンビ手動排除＆参加者リスト再取得機能
+		async function refreshParticipants() {
+			if(!myVoichaUid) return;
+			const btn = document.getElementById('btn_refresh_participants');
+			if(btn) { btn.innerText = '⏳'; btn.disabled = true; }
+			
+			const usersRef = collection_ref(db, 'voicha_users', currentThreadId, 'participants');
+			try {
+				const snap = await getDocs_ref(usersRef);
+				const now = Date.now();
+				let activeBroadcasters = 0;
+				
+				snap.forEach(d => {
+					const peerUid = d.id;
+					const data = d.data();
+					if (peerUid === myVoichaUid) {
+						if(data.isBroadcaster) activeBroadcasters++;
+						return;
+					}
+					
+					const pc = peerConnections[peerUid];
+					// 30秒以上前に入室し、現在繋がっていないユーザーをゾンビとみなす
+					const isOld = (now - (data.time || 0)) > 30000; 
+					const isDisconnected = !pc || ['disconnected', 'failed', 'closed'].includes(pc.iceConnectionState);
+					
+					if (isOld && isDisconnected) {
+						// ゾンビを強制排除（非同期で投げっぱなし）
+						deleteDoc_ref(doc_ref(usersRef, peerUid)).catch(e=>{});
+						if (activeParticipants[peerUid]) delete activeParticipants[peerUid];
+						if (pc) { pc.close(); delete peerConnections[peerUid]; }
+						let el = document.getElementById('audio_webrtc_' + peerUid);
+						if (el) el.remove();
+					} else {
+						if(data.isBroadcaster) activeBroadcasters++;
+					}
+				});
+				
+				// 配信者が全員消えたら waiting に戻す
+				if (activeBroadcasters === 0) {
+					let currentData = await getDoc_ref(doc_ref(db, "bbs_data", currentBoard));
+					if (currentData.exists()) {
+						let tList = JSON.parse(currentData.data().data || "[]");
+						let tIdx = tList.findIndex(t => t.id == currentThreadId);
+						if (tIdx !== -1 && tList[tIdx].voicha && tList[tIdx].voicha.status === 'live') {
+							tList[tIdx].voicha.status = 'waiting';
+							await setDoc_ref(doc_ref(db, "bbs_data", currentBoard), { data: JSON.stringify(tList) });
+						}
+					}
+				}
+				renderVoichaParticipants();
+			} catch(e) { console.error(e); }
+			
+			if(btn) { btn.innerText = '🔄 更新'; btn.disabled = false; }
+		}
+
 		function toggleMic() {
 			if(!liveStreamWebRTC) return;
 			isMicMuted = !isMicMuted;
@@ -589,7 +645,7 @@
 		async function joinVoicha(isBroadcaster) {
 			amIBroadcaster = isBroadcaster;
 			isMicMuted = false; isSpeakerMuted = false;
-			activeParticipants = {}; // リセット
+			activeParticipants = {}; 
 
 			const btnMic = document.getElementById('btn_mute_mic');
 			btnMic.innerText = '🎤 マイク ON'; btnMic.style.background = '#f0f0f0'; btnMic.style.color = '#333';
@@ -607,10 +663,9 @@
 			document.getElementById('voicha_live_panel').style.display = 'block';
 			document.getElementById('voicha_live_status').innerText = '接続の準備中...';
 			
-			let myNutoId = Math.random().toString(36).substring(2, 6).toUpperCase(); // 4桁の短いIDにする
+			let myNutoId = Math.random().toString(36).substring(2, 6).toUpperCase(); 
 			myVoichaUid = 'user_' + getDailyId() + '_' + myNutoId;
 			
-			// 自分をリストに追加
 			activeParticipants[myVoichaUid] = { id: myNutoId, isBroadcaster: amIBroadcaster, isMe: true };
 			renderVoichaParticipants();
 
@@ -684,7 +739,6 @@
 						if(peerUid === myVoichaUid) return;
 						
 						if(change.type === 'added') {
-							// リストに追加
 							activeParticipants[peerUid] = { 
 								id: peerUid.split('_')[2] || '????',
 								isBroadcaster: change.doc.data().isBroadcaster,
@@ -707,7 +761,7 @@
 							}
 						}
 					});
-					renderVoichaParticipants(); // 画面更新
+					renderVoichaParticipants(); 
 				});
 				voichaUnsubscribes.push(unsubUsers);
 				

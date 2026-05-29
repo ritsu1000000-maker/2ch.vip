@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>個人用マルチ掲示板（生配信ぬとらじ・ひとらじ実装版）</title>
+	<title>個人用マルチ掲示板（Firebaseオンライン対応版）</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<style>
@@ -70,8 +70,8 @@
 		</div>
 		<div id="vertical_headline_area" style="display: none;">
 			<div class="vertical-headline-wrapper">
-				<div class="vertical-headline-tabs"><button onclick="document.getElementById('headline_content').scrollTop=0">⬆️</button><button onclick="initHeadline()">🔄</button></div>
-				<div class="vertical-headline-content" id="headline_content"></div>
+				<div class="vertical-headline-tabs"><button onclick="document.getElementById('headline_content').scrollTop=0">⬆️</button></div>
+				<div class="vertical-headline-content" id="headline_content"><div style="padding:10px; color:#666;">読み込み中...</div></div>
 			</div>
 		</div>
 		<div id="board_header_area">
@@ -128,12 +128,10 @@
 			<div id="map_picker"></div><button onclick="closeMapModal()">キャンセル</button> <button onclick="saveMapData()">位置をセット</button>
 		</div>
 	</div>
-
 	<div id="voicha_live_modal" class="modal-overlay">
 		<div class="modal-box" style="width: 350px;">
 			<div style="font-weight:bold; margin-bottom:10px; font-size:16px;">📶 生配信ルーム</div>
 			<div id="voicha_live_status" style="margin-bottom: 15px; font-size:12px; color:#555;">マイクに接続中...</div>
-			
 			<div style="display:flex; justify-content:center; gap:20px; margin-bottom:20px;">
 				<div style="text-align:center;">
 					<div class="live-user-icon">👤</div>
@@ -141,36 +139,125 @@
 					<div class="live-mic-bar"><div id="voicha_mic_level" class="live-mic-level"></div></div>
 				</div>
 			</div>
-			
 			<div style="font-size:11px; color:#999; margin-bottom:15px; text-align:left;">※現在ローカル動作のためUIのみです。外部との通信は行われませんが、声の大きさに応じてマイクレベルが動きます。</div>
 			<div><button class="modal-btn" style="background:#dc3545; color:#fff;" onclick="leaveVoicha()">退出する</button></div>
 		</div>
 	</div>
 
 	<script>
+		// ==========================================
+		// 基本設定と変数群
+		// ==========================================
 		const urlParams = new URLSearchParams(window.location.search);
 		const currentBoard = urlParams.get('board') || 'main';
 		const currentThreadId = urlParams.get('thread');
-		const storageKey = 'local_bbs_v3_' + currentBoard;
 		const boardTitles = { 'main': 'メイン掲示板', 'game': 'ゲーム語り場', 'music': '音楽の話題', 'memo': '個人的なメモ' };
 
 		let oekakiDataUrl = null, voiceDataUrl = null, mapDataInfo = null, activeFormMode = '', showAllPostsMode = false;
+		
+		// Firebase用グローバル変数
+		let db, setDoc_ref, doc_ref;
+		let allBoardsCache = { 'main': [], 'game': [], 'music': [], 'memo': [] };
+		let cachedThreads = [];
+		let justPosted = false; // 自分が投稿した直後かどうかを判定するフラグ
 
-		window.onload = function() {
-			const ht = document.getElementById('board_name_display'); if(ht) ht.innerText = boardTitles[currentBoard] || '掲示板';
-			if(!currentThreadId) { document.getElementById('vertical_headline_area').style.display = 'block'; initHeadline(); }
-			renderScreen(); initOekakiEvents();
+		// ==========================================
+		// 起動時の処理（Firebase接続）
+		// ==========================================
+		window.onload = async function() {
+			const ht = document.getElementById('board_name_display'); 
+			if(ht) ht.innerText = boardTitles[currentBoard] || '掲示板';
+
+			try {
+				// Firebaseの動的インポート
+				const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js");
+				const { getFirestore, doc, setDoc, onSnapshot } = await import("https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js");
+
+				// ユーザーから提供されたFirebaseの「鍵」
+				const firebaseConfig = {
+					apiKey: "AIzaSyBCQArL0Q1wDveRywCpet5Nor3PuRYt7fM",
+					authDomain: "sabopennet.firebaseapp.com",
+					projectId: "sabopennet",
+					storageBucket: "sabopennet.firebasestorage.app",
+					messagingSenderId: "284308308452",
+					appId: "1:284308308452:web:e36dd991e55a0e60e4c7f1",
+					measurementId: "G-K17XRK5KRN"
+				};
+
+				const app = initializeApp(firebaseConfig);
+				db = getFirestore(app);
+				setDoc_ref = setDoc;
+				doc_ref = doc;
+
+				// 各板ごとにリアルタイム監視（リスナー）をセット
+				Object.keys(boardTitles).forEach(b => {
+					onSnapshot(doc(db, "bbs_data", b), (snap) => {
+						if(snap.exists()) {
+							allBoardsCache[b] = JSON.parse(snap.data().data || "[]");
+						} else {
+							allBoardsCache[b] = [];
+						}
+
+						// 現在開いている板のデータが更新された場合
+						if (b === currentBoard) {
+							cachedThreads = allBoardsCache[b];
+							
+							// 自分が投稿した直後なら、手動でアニメーション付き描画をしているのでここはスキップする
+							if (!justPosted) {
+								renderScreen();
+							} else {
+								justPosted = false; 
+							}
+						}
+						
+						// スレ一覧画面の場合は、ヘッドライン（新着）も更新する
+						if (!currentThreadId) {
+							document.getElementById('vertical_headline_area').style.display = 'block';
+							initHeadline();
+						}
+					});
+				});
+
+			} catch(e) {
+				console.error("Firebase Connection Error: ", e);
+				alert("データベースの接続に失敗しました。Firebaseのルール設定などを確認してください。");
+			}
+
+			initOekakiEvents();
 		};
 
+		// ==========================================
+		// データ取得・削除（Firebase連携版）
+		// ==========================================
+		function getThreads() { 
+			// Firebaseから取得済みのキャッシュを返す
+			return cachedThreads; 
+		}
+
+		async function clearBbs() { 
+			if (confirm('この板のデータをすべて削除しますか？')) { 
+				try {
+					await setDoc_ref(doc_ref(db, "bbs_data", currentBoard), { data: "[]" });
+					window.location.href = '?board=' + currentBoard; 
+				} catch(e) {
+					alert("削除に失敗しました。");
+				}
+			} 
+		}
+
+		// API設定（これは個人の鍵なのでLocalStorageに残す）
 		function openApiSettings() { document.getElementById('api_key_input').value = localStorage.getItem('my_ai_api_key') || ''; document.getElementById('api_settings_modal').style.display = 'flex'; }
 		function closeApiSettings() { document.getElementById('api_settings_modal').style.display = 'none'; }
 		function saveApiSettings() { const k = document.getElementById('api_key_input').value.trim(); if(k) localStorage.setItem('my_ai_api_key', k); else localStorage.removeItem('my_ai_api_key'); closeApiSettings(); }
 
+		// ==========================================
+		// UI描画処理
+		// ==========================================
 		function initHeadline() {
 			if(currentThreadId) return; 
 			let all = [];
 			Object.keys(boardTitles).forEach(b => {
-				const ths = JSON.parse(localStorage.getItem('local_bbs_v3_' + b)) || [];
+				const ths = allBoardsCache[b]; // Firebaseキャッシュから取得
 				ths.forEach(t => t.posts.forEach((p, i) => all.push({ b: b, bn: boardTitles[b], tid: t.id, tt: t.title, pi: i+1, msg: p.msg, time: p.time, rc: t.posts.length, v: t.voicha })));
 			});
 			all.sort((a, b) => b.time.localeCompare(a.time));
@@ -183,34 +270,29 @@
 				let wf = p.v ? '📶 ' : '';
 				html += `<div class="hl-item"><div><span class="hl-meta">${t}</span> <a href="?board=${p.b}&thread=${p.tid}" class="hl-title">【${p.bn}】${wf}${escapeHtml(p.tt)} (${p.rc})</a></div><div class="hl-snippet">&gt;&gt;${p.pi} ${escapeHtml(s)}</div></div>`;
 			});
-			document.getElementById('headline_content').innerHTML = html || 'まだ書き込みはありません。'; 
+			document.getElementById('headline_content').innerHTML = html || '<div style="padding:10px; color:#666;">まだ書き込みはありません。</div>'; 
 		}
 
 		function renderScreen(anim = false) {
 			const ths = getThreads(); const ca = document.getElementById('main_content_area');
 			if (currentThreadId) {
 				const th = ths.find(t => t.id == currentThreadId);
-				if (!th) { ca.innerHTML = '<div class="bbs_box"><div class="bbs_body" style="color:red;">スレッドなし</div></div>'; return; }
+				if (!th) { ca.innerHTML = '<div class="bbs_box"><div class="bbs_body" style="color:red;">スレッドが削除されたか存在しません。</div></div>'; return; }
 				document.getElementById('board_header_area').style.display = 'none'; document.getElementById('create_thread_area').style.display = 'none';
 				
 				let wf = th.voicha ? '📶 ' : '';
 				let html = `<div class="ch2-wrapper"><div class="ch2-nav"><a href="?board=${currentBoard}">[板に戻る]</a><a href="#">全部</a> <a href="#">最新50</a></div><hr><div class="ch2-title">${wf}${escapeHtml(th.title)} (${th.posts.length})</div>`;
 				
-				// ★ 生配信バナーの表示
 				if (th.voicha) {
 					let vtext = '';
 					if (th.voicha.limit === 1) vtext = '※ひとらじ配信中（スレ主のみ）';
 					else if (th.voicha.limit) vtext = `※ぬとらじ配信中（上限${th.voicha.limit}人）`;
 					else vtext = '※ぬとらじ配信中（参加自由）';
-					
-					html += `<div class="voicha-banner">
-						<span>${vtext}</span>
-						<button class="modal-btn" style="background:#28a745; color:#fff; padding:4px 10px; font-size:12px; border-color:#218838;" onclick="joinVoicha()">🎧 配信に参加 / 視聴する</button>
-					</div>`;
+					html += `<div class="voicha-banner"><span>${vtext}</span><button class="modal-btn" style="background:#28a745; color:#fff; padding:4px 10px; font-size:12px; border-color:#218838;" onclick="joinVoicha()">🎧 配信に参加 / 視聴する</button></div>`;
 				}
 
 				html += `<div id="post_list_wrapper">`;
-				if (!showAllPostsMode && th.posts.length > 50) html += `<div style="text-align:center; margin-bottom:20px; padding:10px;"><button onclick="showAllPostsMode = true; renderScreen();">🔃 前のレスを取得（全 ${th.posts.length} レス表示）</button></div>`;
+				if (!showAllPostsMode && th.posts.length > 50) html += `<div style="text-align:center; margin-bottom:20px; padding:10px;"><button class="modal-btn" style="background:#fff; color:#0056b3; border: 1px solid #0056b3;" onclick="showAllPostsMode = true; renderScreen();">🔃 前のレスを取得（全 ${th.posts.length} レス表示）</button></div>`;
 
 				const sid = th.posts[0].id;
 				th.posts.forEach((p, i) => {
@@ -220,7 +302,7 @@
 					let cls = ((dId === sid) && i > 0) ? ' owner-reply' : ''; if (anim && i === th.posts.length - 1) cls += ' new-post';
 					let img = p.image ? `<a href="${p.image}" target="_blank"><img src="${p.image}" class="ch2-post-image"></a>` : '';
 					let aud = p.audio ? `<br><audio controls src="${p.audio}" style="height:35px;"></audio>` : '';
-					let map = p.map ? `<br><iframe width="100%" height="200" src="https://www.openstreetmap.org/export/embed.html?bbox=${p.map.lng-0.005},${p.map.lat-0.005},${p.map.lng+0.005},${p.map.lat+0.005}&amp;layer=mapnik&amp;marker=${p.map.lat},${p.map.lng}"></iframe>` : '';
+					let map = p.map ? `<br><iframe width="100%" height="200" src="https://www.openstreetmap.org/export/embed.html?bbox=${p.map.lng-0.005},${p.map.lat-0.005},${p.map.lng+0.005},${p.map.lat+0.005}&amp;layer=mapnik&amp;marker=${p.map.lat},${p.map.lng}" style="border: 1px solid #ccc; margin-top: 10px; max-width: 400px;"></iframe>` : '';
 					html += `<div class="ch2-post${cls}"><div class="ch2-header">${i + 1} ：${mLink} ：${p.time} ID:${dId}${om}</div><div class="ch2-body">${img}${p.msg}${aud}${map}</div></div>`;
 				});
 
@@ -241,22 +323,22 @@
 
 		function toggleOwnerPosts() { document.getElementById('post_list_wrapper').className = document.getElementById('hide_owner_cb').checked ? 'hide-owner-mode' : ''; }
 
-		/* --- 投稿処理 --- */
-		function submitForm(event) {
+		/* --- Firebaseへの投稿処理 --- */
+		async function submitForm(event) {
 			event.preventDefault(); const f = document.getElementById('bbs_file');
-			if (oekakiDataUrl) { postData(document.getElementById('bbs_name').value, document.getElementById('bbs_email').value, document.getElementById('bbs_msg').value, document.getElementById('bbs_dai').value, oekakiDataUrl, false, voiceDataUrl, mapDataInfo); } 
-			else if (f.files[0]) { const r = new FileReader(); r.onload = e => { postData(document.getElementById('bbs_name').value, document.getElementById('bbs_email').value, document.getElementById('bbs_msg').value, document.getElementById('bbs_dai').value, e.target.result, false, voiceDataUrl, mapDataInfo); f.value=''; }; r.readAsDataURL(f.files[0]); } 
-			else { postData(document.getElementById('bbs_name').value, document.getElementById('bbs_email').value, document.getElementById('bbs_msg').value, document.getElementById('bbs_dai').value, null, false, voiceDataUrl, mapDataInfo); }
+			if (oekakiDataUrl) { await postData(document.getElementById('bbs_name').value, document.getElementById('bbs_email').value, document.getElementById('bbs_msg').value, document.getElementById('bbs_dai').value, oekakiDataUrl, false, voiceDataUrl, mapDataInfo); } 
+			else if (f.files[0]) { const r = new FileReader(); r.onload = async e => { await postData(document.getElementById('bbs_name').value, document.getElementById('bbs_email').value, document.getElementById('bbs_msg').value, document.getElementById('bbs_dai').value, e.target.result, false, voiceDataUrl, mapDataInfo); f.value=''; }; r.readAsDataURL(f.files[0]); } 
+			else { await postData(document.getElementById('bbs_name').value, document.getElementById('bbs_email').value, document.getElementById('bbs_msg').value, document.getElementById('bbs_dai').value, null, false, voiceDataUrl, mapDataInfo); }
 		}
 
-		function submitReply(event) {
+		async function submitReply(event) {
 			event.preventDefault(); const hoc = false; const f = document.getElementById('reply_file');
-			if (oekakiDataUrl) { postData(document.getElementById('reply_name').value, document.getElementById('reply_email').value, document.getElementById('reply_msg').value, null, oekakiDataUrl, hoc, voiceDataUrl, mapDataInfo); } 
-			else if (f.files[0]) { const r = new FileReader(); r.onload = e => { postData(document.getElementById('reply_name').value, document.getElementById('reply_email').value, document.getElementById('reply_msg').value, null, e.target.result, hoc, voiceDataUrl, mapDataInfo); }; r.readAsDataURL(f.files[0]); } 
-			else { postData(document.getElementById('reply_name').value, document.getElementById('reply_email').value, document.getElementById('reply_msg').value, null, null, hoc, voiceDataUrl, mapDataInfo); }
+			if (oekakiDataUrl) { await postData(document.getElementById('reply_name').value, document.getElementById('reply_email').value, document.getElementById('reply_msg').value, null, oekakiDataUrl, hoc, voiceDataUrl, mapDataInfo); } 
+			else if (f.files[0]) { const r = new FileReader(); r.onload = async e => { await postData(document.getElementById('reply_name').value, document.getElementById('reply_email').value, document.getElementById('reply_msg').value, null, e.target.result, hoc, voiceDataUrl, mapDataInfo); }; r.readAsDataURL(f.files[0]); } 
+			else { await postData(document.getElementById('reply_name').value, document.getElementById('reply_email').value, document.getElementById('reply_msg').value, null, null, hoc, voiceDataUrl, mapDataInfo); }
 		}
 
-		function postData(iName, iEmail, iMsg, iTitle, iBase64, hOwner, aBase64, mData) {
+		async function postData(iName, iEmail, iMsg, iTitle, iBase64, hOwner, aBase64, mData) {
 			let rawMsg = iMsg.trim(); if (!rawMsg && !iBase64 && !aBase64 && !mData) { alert('入力してください。'); return; }
 			
 			let parsedMsg = escapeHtml(rawMsg);
@@ -266,7 +348,6 @@
 			parsedMsg = parsedMsg.replace(/!random|!rand/g, () => `<span style="color:orange; font-size:18px; font-weight:bold;">${Math.floor(Math.random()*101)}</span>`);
 			parsedMsg = parsedMsg.replace(/\|\|(.*?)\|\|/g, '<span class="spoiler" onclick="this.classList.toggle(\'revealed\')">$1</span>');
 
-			// ★ 生配信コマンド (!voicha) の処理
 			let voichaMatch = rawMsg.match(/!voicha(?::(\d+))?/);
 			let newVoicha = null;
 			let isVoichaTriggered = false;
@@ -300,7 +381,7 @@
 					if (th.akuList.includes(dailyId)) { alert('このスレッドでは書き込みが禁止（アク禁）されています。'); return; }
 
 					if (th.posts[0].id === dailyId) {
-						if (newVoicha) th.voicha = newVoicha; // スレ主なら配信起動OK
+						if (newVoicha) th.voicha = newVoicha; 
 						parsedMsg = parsedMsg.replace(/!aku:(\d+)/g, (match, p1) => {
 							let tIdx = parseInt(p1) - 1;
 							if (th.posts[tIdx]) {
@@ -336,24 +417,31 @@
 				ths.unshift(initObj); 
 			}
 			
-			localStorage.setItem(storageKey, JSON.stringify(ths));
+			// ★Firebaseへ保存
+			try {
+				await setDoc_ref(doc_ref(db, "bbs_data", currentBoard), { data: JSON.stringify(ths) });
+			} catch(e) {
+				console.error(e);
+				alert("書き込みに失敗しました。Firebaseの接続を確認してください。");
+				return;
+			}
+			
 			if (!currentThreadId) { document.getElementById('bbs_dai').value = ''; document.getElementById('bbs_msg').value = ''; } else { document.getElementById('reply_msg').value = ''; }
 			
 			clearOekakiCanvas(); oekakiDataUrl = null; voiceDataUrl = null; mapDataInfo = null;
 			document.querySelectorAll('.status-indicator').forEach(el => el.style.display = 'none');
+			
+			// 自分が投稿したことをマーク（onSnapshotでの再描画を1回スキップするため）
+			justPosted = true;
 			if(!currentThreadId) { initHeadline(); renderScreen(); window.scrollTo(0, 0); } else { renderScreen(true); }
 		}
 
-		/* --- ユーティリティ --- */
-		function getThreads() { return JSON.parse(localStorage.getItem(storageKey)) || []; }
 		function get2chTimeFormat() { const d = new Date(); const ds = ['日', '月', '火', '水', '木', '金', '土']; return `${String(d.getFullYear()).slice(-2)}/${('0'+(d.getMonth()+1)).slice(-2)}/${('0'+d.getDate()).slice(-2)}(${ds[d.getDay()]}) ${('0'+d.getHours()).slice(-2)}:${('0'+d.getMinutes()).slice(-2)}:${('0'+d.getSeconds()).slice(-2)}`; }
 		function getDailyId() { const t = new Date().toDateString(); let sd = localStorage.getItem('id_date'), sid = localStorage.getItem('daily_id'); if (sd !== t || !sid) { sid = Math.random().toString(36).substring(2, 10).toLowerCase() + '0'; localStorage.setItem('id_date', t); localStorage.setItem('daily_id', sid); } return sid; }
-		function clearBbs() { if (confirm('全削除しますか？')) { localStorage.removeItem(storageKey); window.location.href = '?board=' + currentBoard; } }
 		function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
 
-		/* --- 生配信UI（Web Audio APIによるマイク入力可視化） --- */
+		/* --- 生配信UI --- */
 		let liveAudioCtx, liveAnalyser, liveStream, liveMicInterval;
-
 		async function joinVoicha() {
 			document.getElementById('voicha_live_modal').style.display = 'flex';
 			document.getElementById('voicha_live_status').innerText = 'マイクに接続中...';
@@ -370,8 +458,7 @@
 				
 				liveMicInterval = setInterval(() => {
 					liveAnalyser.getByteFrequencyData(dataArray);
-					let sum = 0;
-					for(let i=0; i<dataArray.length; i++) sum += dataArray[i];
+					let sum = 0; for(let i=0; i<dataArray.length; i++) sum += dataArray[i];
 					let avg = sum / dataArray.length;
 					let percent = Math.min(100, (avg / 128) * 100);
 					document.getElementById('voicha_mic_level').style.width = percent + '%';
@@ -380,7 +467,6 @@
 				document.getElementById('voicha_live_status').innerText = '⚠️ マイクの許可がないため視聴のみになります';
 			}
 		}
-
 		function leaveVoicha() {
 			if(liveMicInterval) clearInterval(liveMicInterval);
 			if(liveStream) liveStream.getTracks().forEach(t => t.stop());
@@ -389,7 +475,7 @@
 			document.getElementById('voicha_mic_level').style.width = '0%';
 		}
 
-		/* --- 各種モーダル機能（地図・お絵描き・録音） --- */
+		/* --- その他モーダル群 --- */
 		let leafletMap = null; let mapMarker = null;
 		function openMapModal(mode) { activeFormMode = mode; document.getElementById('map_modal').style.display = 'flex'; if (!leafletMap) { leafletMap = L.map('map_picker').setView([35.681, 139.767], 13); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(leafletMap); leafletMap.on('click', e => { if (mapMarker) leafletMap.removeLayer(mapMarker); mapMarker = L.marker(e.latlng).addTo(leafletMap); }); } setTimeout(() => { leafletMap.invalidateSize(); }, 200); }
 		function closeMapModal() { document.getElementById('map_modal').style.display = 'none'; }
@@ -452,6 +538,15 @@
 			const c = b.getChannelData(0); for (let i=0; i<b.length; i++) { let s = Math.max(-1, Math.min(1, c[i])); v.setInt16(p, s<0?s*32768:s*32767, true); p+=2; } return new Blob([out], {type:'audio/wav'});
 		}
 		function saveVoiceData() { voiceDataUrl = document.getElementById('voice_preview').dataset.tmp; closeVoiceModal(); document.getElementById(activeFormMode==='create'?'voice_status_create':'voice_status_reply').style.display='block'; }
+		
+		function showImageGallery() {
+			const ths = getThreads(); const th = ths.find(t => t.id == currentThreadId); if (!th) return;
+			const gc = document.getElementById('gallery_content'); gc.innerHTML = ''; let hI = false;
+			th.posts.forEach((p, i) => { if (p.image) { hI = true; gc.innerHTML += `<div class="gallery-item"><a href="${p.image}" target="_blank"><img src="${p.image}"></a><br>&gt;&gt;${i + 1}</div>`; } });
+			if (!hI) gc.innerHTML = '<div style="color:#fff; font-size:16px; padding:50px;">画像はありません。</div>';
+			document.getElementById('image_gallery_modal').style.display = 'block';
+		}
+		function closeImageGallery() { document.getElementById('image_gallery_modal').style.display = 'none'; }
 	</script>
 </body>
 </html>

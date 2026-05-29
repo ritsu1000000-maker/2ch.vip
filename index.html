@@ -1,121 +1,457 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <style>
-        body { background-color: #f1ebd8; background-image: url('https://www.2ch.sc/2ch_common/p_brick.gif'); font-family: "MS PGothic", sans-serif; margin: 10px; }
-        .thread-box { background: #efefef; border: 1px solid #aaa; padding: 10px; margin-bottom: 30px; }
-        .title { color: #cc0000; font-size: 1.2rem; font-weight: bold; margin-bottom: 10px; }
-        .post { margin-bottom: 15px; font-size: 15px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
-        .post b { color: green; }
-        .post-id { color: #333; }
-        .form-area { border: 1px solid #aaa; background: #fff; padding: 15px; margin-top: 10px; box-shadow: 2px 2px 0 #888; }
-        .btn-post { padding: 5px 15px; cursor: pointer; background: #eee; border: 1px solid #888; }
-        table.admin-table { width: 100%; border-collapse: collapse; background: white; color: black; }
-        table.admin-table th, table.admin-table td { border: 1px solid #aaa; padding: 8px; font-size: 12px; }
-    </style>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>個人用マルチ掲示板（生配信ぬとらじ・ひとらじ実装版）</title>
+	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+	<style>
+		body { background-color: #EFEFEF; color: #333333; font-family: "メイリオ", Meiryo, sans-serif; font-size: 14px; margin: 0; padding: 0 0 10px 0; }
+		a { color: #0000FF; text-decoration: none; } a:hover { text-decoration: underline; color: #FF0000; }
+		#container { width: 98%; max-width: 850px; margin: 10px auto; }
+		.headline-container { background-color: #000; color: #0f0; padding: 4px 0; font-size: 13px; overflow: hidden; white-space: nowrap; width: 100%; border-bottom: 2px solid #333; }
+		.headline-text { display: inline-block; padding-left: 100%; animation: scrollLeft 25s linear infinite; }
+		.headline-text a { color: #0f0; margin-right: 30px; } .headline-text a:hover { color: #fff; }
+		@keyframes scrollLeft { 0% { transform: translate(0, 0); } 100% { transform: translate(-100%, 0); } }
+		.vertical-headline-wrapper { border: 1px solid #8fbc8f; border-radius: 2px; margin-bottom: 20px; background-color: #eaffea; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1); }
+		.vertical-headline-tabs { background-color: #d4f4d4; padding: 4px 8px; border-bottom: 1px solid #8fbc8f; display: flex; gap: 5px; }
+		.vertical-headline-tabs button { background: #fff; border: 1px solid #aaa; border-radius: 2px; padding: 2px 6px; cursor: pointer; font-size: 11px; }
+		.vertical-headline-content { max-height: 250px; overflow-y: auto; font-size: 13px; }
+		.hl-item { padding: 6px 10px; border-bottom: 1px dotted #bbb; } .hl-item:nth-child(odd) { background-color: #e0f8e0; } .hl-item:nth-child(even) { background-color: #d4f4d4; }
+		.hl-meta { color: #888; font-size: 11px; margin-right: 5px; } .hl-title { color: #0000ff; font-weight: bold; } .hl-snippet { margin-top: 3px; padding-left: 20px; }
+		.board_links { background-color: #e8f4f8; border: 1px solid #b3d4e0; padding: 10px 15px; margin-bottom: 15px; font-weight: bold; font-size: 13px; border-radius: 4px; }
+		.board_links a { margin-right: 15px; position: relative; padding-left: 15px; } .board_links a::before { content: "■"; color: #888; position: absolute; left: 0; font-size: 10px; }
+		.bbs_box { background-color: #FFFFFF; border: 1px solid #ccc; margin-bottom: 20px; border-radius: 4px; } .bbs_body { padding: 20px; }
+		.title { font-size: 18px; font-weight: bold; border-bottom: 2px solid #ddd; padding-bottom: 8px; margin-top: 0; display: flex; align-items: center; }
+		.title::before { content: ""; display: inline-block; width: 6px; height: 22px; background-color: #4a90e2; margin-right: 10px; }
+		.form-title { font-weight:bold; font-size:16px; margin-bottom:12px; border-bottom:1px solid #eee; padding-bottom:5px; } .form-title::before { content: "■"; color: #4a90e2; margin-right: 8px; }
+		.thread_list { list-style: none; padding: 0; margin: 0; } .thread_list li { padding: 12px 10px 12px 25px; border-bottom: 1px dotted #ccc; position: relative; }
+		.thread_list li::before { content: "▶"; position: absolute; left: 8px; color: #aaa; font-size: 10px; } .thread_list a { font-weight: bold; font-size: 15px; }
+		.create-form input[type="text"], .create-form textarea, .create-form input[type="file"] { border: 1px solid #aaa; padding: 6px; margin-top: 4px; font-size: 13px; }
+		.create-form textarea { width: 100%; height: 120px; } .btn-primary { background-color: #f0f0f0; border: 1px solid #888; padding: 6px 15px; cursor: pointer; font-weight: bold; }
+		.ch2-wrapper { background-color: #FFFFFF; padding: 15px 25px; border: 1px solid #ccc; } .ch2-title { color: #ff0000; font-size: 20px; font-weight: bold; margin: 15px 0; }
+		.ch2-post { margin-bottom: 22px; } .ch2-header { font-size: 14px; color: #333; margin-bottom: 8px; } .ch2-name { color: #008000; font-weight: bold; }
+		.ch2-name::before { content: "◆ "; color: #999; font-size: 11px; } .ch2-body { margin-left: 2.5em; font-size: 15px; line-height: 1.6; word-wrap: break-word; }
+		.ch2-post-image { max-width: 300px; display: block; margin: 10px 0; border: 1px solid #ccc; cursor: pointer;} .ch2-owner-mark { color: #ff0000; font-weight: bold; margin-left: 2px; }
+		.hide-owner-mode .owner-reply { display: none !important; }
+		.spoiler { background-color: #000; color: #000; cursor: pointer; padding: 0 4px; border-radius: 2px; } .spoiler.revealed { color: #fff; }
+		@keyframes slideUp { 0% { opacity: 0; transform: translateY(40px); } 100% { opacity: 1; transform: translateY(0); } } .new-post { animation: slideUp 0.4s forwards; }
+		.ch2-form-area { background-color: #e0e0e0; padding: 12px; display: inline-block; border-radius: 4px; margin-top: 20px; min-width: 450px; }
+		.form-row { display: flex; align-items: center; margin-bottom: 6px; gap: 8px; flex-wrap: wrap; }
+		.ch2-form-area textarea { width: 100%; height: 100px; padding: 8px; font-size: 14px; }
+		.tool-btn { background: #f8f8f8; border: 1px solid #aaa; padding: 4px 12px; cursor: pointer; border-radius: 2px; color: #555; }
+		.tool-img::before { content: "画像"; } .tool-pin::before { content: "位置"; } .tool-msg::before { content: "Aa"; } .tool-pen::before { content: "描画"; }
+		.ch2-submit { flex-grow: 1; font-weight: bold; font-size: 15px; padding: 6px; cursor: pointer; } .ch2-submit::before { content: "■ 投稿する"; }
+		.modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 2000; align-items: center; justify-content: center; }
+		.modal-box { background: #fff; padding: 20px; border-radius: 5px; text-align: center; max-width: 90%; }
+		.btn-oekaki-toggle { background: #fff3cd; border: 1px solid #ffeeba; color: #856404; padding: 5px 10px; cursor: pointer; font-size: 12px; font-weight: bold; }
+		.btn-voice-toggle { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; padding: 5px 10px; cursor: pointer; font-size: 12px; font-weight: bold; margin-left: 5px; }
+		.btn-map-toggle { background: #e2e3e5; border: 1px solid #d6d8db; color: #383d41; padding: 5px 10px; cursor: pointer; font-size: 12px; font-weight: bold; margin-left: 5px; }
+		.status-indicator { color: #008000; font-size: 12px; margin-top: 3px; display: none; font-weight: bold; }
+		#oekaki_canvas { border: 1px solid #999; background: #fff; cursor: crosshair; margin-bottom: 10px; max-width: 100%; }
+		.oekaki-tools { margin-bottom: 10px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+		.color-btn { width: 25px; height: 25px; border: 2px solid #ccc; border-radius: 50%; cursor: pointer; } .color-btn.active { border-color: #000; transform: scale(1.1); }
+		.eraser-btn { background: #fff; border: 2px solid #aaa; padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 12px; font-weight: bold; }
+		#map_picker { height: 300px; width: 100%; background: #eee; border: 1px solid #ccc; margin-bottom: 10px; z-index: 2001; }
+		
+		/* --- 生配信UI用スタイル --- */
+		.voicha-banner { background-color:#fff3cd; color:#856404; padding:8px 15px; margin-bottom:15px; border:1px solid #ffeeba; border-radius:4px; font-weight:bold; display:flex; justify-content:space-between; align-items:center; }
+		.live-user-icon { width: 50px; height: 50px; background: #e0e0e0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; margin: 0 auto; border: 3px solid #28a745; }
+		.live-mic-bar { width: 100%; height: 6px; background: #ccc; margin-top: 8px; border-radius: 3px; overflow: hidden; }
+		.live-mic-level { height: 100%; width: 0%; background: #28a745; transition: width 0.1s; }
+	</style>
 </head>
 <body>
+	<div id="container">
+		<div class="board_links">
+			<span style="color:#666; margin-right: 10px;">移動先：</span>
+			<a href="?board=main">メイン掲示板</a><a href="?board=game">ゲーム語り場</a><a href="?board=music">音楽の話題</a><a href="?board=memo">個人的なメモ</a>
+		</div>
+		<div id="vertical_headline_area" style="display: none;">
+			<div class="vertical-headline-wrapper">
+				<div class="vertical-headline-tabs"><button onclick="document.getElementById('headline_content').scrollTop=0">⬆️</button><button onclick="initHeadline()">🔄</button></div>
+				<div class="vertical-headline-content" id="headline_content"></div>
+			</div>
+		</div>
+		<div id="board_header_area">
+			<div class="bbs_box"><div class="bbs_body">
+				<p class="title" id="board_name_display">読み込み中...</p>
+				<div style="display:flex; justify-content:space-between; align-items:flex-end;">
+					<span style="font-size: 13px;"><a href="#create_thread_area" style="font-weight:bold; color:#0056b3; margin-right:10px;">[スレ立て]</a>スレッド一覧です。</span>
+					<div><a href="#" onclick="openApiSettings(); return false;" style="font-size: 12px; color: #0056b3; margin-right: 15px; font-weight:bold;">⚙️ API設定</a><a href="#" onclick="clearBbs(); return false;" style="font-size: 12px; color: #CC0000;">全データを初期化</a></div>
+				</div>
+			</div></div>
+		</div>
 
-<div id="app"></div>
+		<div id="main_content_area"></div>
 
-<script>
-    const STORAGE_KEY = '2ch_hybrid_db';
-    let db = JSON.parse(localStorage.getItem(STORAGE_KEY)) || { threads: {} };
+		<div class="bbs_box create-form" id="create_thread_area">
+			<div class="bbs_body">
+				<div class="form-title">新規スレッド作成</div>
+				<form onsubmit="submitForm(event)">
+					<div style="margin-bottom: 10px;"><label>タイトル：</label><br><input type="text" id="bbs_dai" style="width: 100%; max-width: 400px;" /></div>
+					<div style="margin-bottom: 10px; display: flex; gap: 15px; flex-wrap: wrap; align-items: center;">
+						<div><label>名前：</label><br><input type="text" id="bbs_name" value="名無しさん" style="width:150px;"/></div>
+						<div><label>E-mail：</label><br><input type="text" id="bbs_email" placeholder="sage" style="width:150px;" /></div>
+						<div><label>添付：</label><br><div style="display:flex; gap:5px;"><input type="file" id="bbs_file" accept="image/*" /><button type="button" class="btn-oekaki-toggle" onclick="openOekakiModal('create')">🎨 お絵描き</button><button type="button" class="btn-voice-toggle" onclick="openVoiceModal('create')">🎤 ボイス</button><button type="button" class="btn-map-toggle" onclick="openMapModal('create')">📍 地図</button></div>
+						<div id="oekaki_status_create" class="status-indicator">※お絵描きセット済</div><div id="voice_status_create" class="status-indicator" style="color:#0000ff;">※ボイスセット済</div><div id="map_status_create" class="status-indicator" style="color:#ff8c00;">※地図セット済</div></div>
+					</div>
+					<div style="margin-bottom: 10px;"><textarea id="bbs_msg" placeholder="本文を入力... (例: !voicha:4, !aku:レス番号, !kuji)"></textarea></div>
+					<div><input class="btn-primary" type="submit" value="■ 新規スレッドを作成する"></div>
+				</form>
+			</div>
+		</div>
+	</div>
 
-    // 1日限定の4桁ID生成
-    function generateID(seed) {
-        const date = new Date().toISOString().split('T')[0];
-        let hash = 0;
-        const str = seed + date;
-        for (let i = 0; i < str.length; i++) {
-            hash = ((hash << 5) - hash) + str.charCodeAt(i);
-            hash |= 0;
-        }
-        return Math.abs(hash).toString(36).substring(0, 4).toUpperCase();
-    }
+	<div id="api_settings_modal" class="modal-overlay"><div class="modal-box"><div style="font-weight:bold; font-size:16px; margin-bottom:15px;">⚙️ 外部API設定</div><input type="password" id="api_key_input" style="width:100%; padding:5px; margin-bottom:15px;" placeholder="sk-..."><button onclick="closeApiSettings()">キャンセル</button> <button onclick="saveApiSettings()">保存する</button></div></div>
+	<div id="image_gallery_modal" class="modal-overlay" style="align-items: flex-start;"><div style="width:100%;"><div class="modal-header"><span class="modal-close" onclick="closeImageGallery()">✖ 閉じる</span></div><div class="modal-content" id="gallery_content"></div></div></div>
+	<div id="oekaki_modal" class="modal-overlay">
+		<div class="modal-box"><div style="font-weight:bold; margin-bottom:10px;">お絵描き</div><button style="margin-bottom:10px;" onclick="applyAIFilter()">✨ AI補正</button><br><canvas id="oekaki_canvas" width="400" height="300"></canvas>
+			<div class="oekaki-tools"><div class="color-btn active" style="background:#000;" onclick="setOekakiColor('#000', this)"></div><div class="color-btn" style="background:#ff0000;" onclick="setOekakiColor('#ff0000', this)"></div><div class="color-btn" style="background:#0000ff;" onclick="setOekakiColor('#0000ff', this)"></div><button type="button" class="eraser-btn" onclick="setEraser(this)">消しゴム</button>
+			<select id="oekaki_pen_size" onchange="setOekakiSize(this.value)"><option value="2">細</option><option value="5" selected>中</option><option value="15">太</option></select></div>
+			<button onclick="clearOekakiCanvas()">全消去</button> <button onclick="closeOekakiModal()">キャンセル</button> <button onclick="saveOekakiCanvas()">画像をセット</button>
+		</div>
+	</div>
+	<div id="voice_modal" class="modal-overlay">
+		<div class="modal-box" style="width: 320px;">
+			<div style="font-weight:bold; margin-bottom:15px; font-size:16px;">🎤 ボイス録音</div>
+			<div style="margin-bottom: 15px; display:flex; gap:10px;"><select id="voice_effect" style="flex-grow:1;"><option value="normal">標準</option><option value="robot">🤖 ロボット</option><option value="cave">⛰️ 洞窟 (エコー)</option><option value="telephone">☎️ テレフォン</option></select><button onclick="applyVoiceEffect()" id="voice_update_btn" disabled>🔄 更新</button></div>
+			<div style="margin-bottom: 15px;"><div id="voice_status" style="color:#d9534f; margin-bottom:5px;">待機中...</div><button id="voice_record_btn" onclick="startVoiceRecord()">🔴 録音</button> <button id="voice_stop_btn" onclick="stopVoiceRecord()" disabled>⏹ 停止</button></div>
+			<audio id="voice_preview" controls style="width: 100%; display: none;"></audio><br><br>
+			<button onclick="closeVoiceModal()">キャンセル</button> <button onclick="saveVoiceData()" id="voice_save_btn" disabled>音声をセット</button>
+		</div>
+	</div>
+	<div id="map_modal" class="modal-overlay">
+		<div class="modal-box" style="width: 500px; max-width: 95%;">
+			<div style="font-weight:bold; margin-bottom:10px;">📍 位置情報を選択</div><div style="margin-bottom: 10px;"><a href="#" onclick="getCurrentLocation(); return false;">[自分の現在地を取得する]</a></div>
+			<div id="map_picker"></div><button onclick="closeMapModal()">キャンセル</button> <button onclick="saveMapData()">位置をセット</button>
+		</div>
+	</div>
 
-    function render() {
-        const params = new URLSearchParams(window.location.search);
-        const tId = params.get('t');
-        const mode = params.get('mode');
-        const app = document.getElementById('app');
+	<div id="voicha_live_modal" class="modal-overlay">
+		<div class="modal-box" style="width: 350px;">
+			<div style="font-weight:bold; margin-bottom:10px; font-size:16px;">📶 生配信ルーム</div>
+			<div id="voicha_live_status" style="margin-bottom: 15px; font-size:12px; color:#555;">マイクに接続中...</div>
+			
+			<div style="display:flex; justify-content:center; gap:20px; margin-bottom:20px;">
+				<div style="text-align:center;">
+					<div class="live-user-icon">👤</div>
+					<div style="font-size:11px; margin-top:5px; font-weight:bold;">あなた</div>
+					<div class="live-mic-bar"><div id="voicha_mic_level" class="live-mic-level"></div></div>
+				</div>
+			</div>
+			
+			<div style="font-size:11px; color:#999; margin-bottom:15px; text-align:left;">※現在ローカル動作のためUIのみです。外部との通信は行われませんが、声の大きさに応じてマイクレベルが動きます。</div>
+			<div><button class="modal-btn" style="background:#dc3545; color:#fff;" onclick="leaveVoicha()">退出する</button></div>
+		</div>
+	</div>
 
-        // --- 管理者モード ---
-        if (mode === 'admin') {
-            let html = `<h2>掲示板 管理パネル</h2><table class="admin-table"><tr><th>ID</th><th>タイトル</th><th>レス</th><th>操作</th></tr>`;
-            Object.keys(db.threads).sort().forEach(id => {
-                html += `<tr><td>${id}</td><td>${db.threads[id].title}</td><td>${db.threads[id].posts.length}</td>
-                        <td><button onclick="deleteThread('${id}')">削除</button></td></tr>`;
-            });
-            html += `</table><br><a href="iyan.html">戻る</a>`;
-            app.innerHTML = html;
-            return;
-        }
+	<script>
+		const urlParams = new URLSearchParams(window.location.search);
+		const currentBoard = urlParams.get('board') || 'main';
+		const currentThreadId = urlParams.get('thread');
+		const storageKey = 'local_bbs_v3_' + currentBoard;
+		const boardTitles = { 'main': 'メイン掲示板', 'game': 'ゲーム語り場', 'music': '音楽の話題', 'memo': '個人的なメモ' };
 
-        // --- スレッド内表示 ---
-        if (tId && db.threads[tId]) {
-            const t = db.threads[tId];
-            let html = `<div class="thread-box"><div class="title">【${tId}】 ${t.title}</div>`;
-            t.posts.forEach((p, i) => {
-                html += `<div class="post">${i+1} 名前：<b>名無しさん</b>：${p.time} <span class="post-id">ID:${p.uid}</span><br><br>${p.content.replace(/\n/g, '<br>')}</div>`;
-            });
-            html += `
-                <div class="form-area">
-                    <button class="btn-post" onclick="addPost('${tId}')">書き込む</button>
-                    名前：<input id="name" type="text" size="15"> E-mail：<input id="mail" type="text" size="15" value="sage">
-                    <textarea id="msg" style="width:98%; height:100px; margin-top:10px;"></textarea>
-                </div>
-                <br><a href="iyan.html">■掲示板トップへ戻る</a></div>`;
-            app.innerHTML = html;
-        } else {
-            // --- トップ画面 (スレッド一覧) ---
-            let html = `<h2>スレッド一覧</h2>`;
-            Object.keys(db.threads).sort((a,b) => b-a).forEach(id => {
-                html += `<a href="?t=${id}" style="color:blue; font-weight:bold; display:block; margin-bottom:8px;">■${db.threads[id].title} (${db.threads[id].posts.length})</a>`;
-            });
-            html += `
-                <div class="form-area" style="margin-top:40px;">
-                    <h3>新規スレ作成</h3>
-                    タイトル：<input id="t-title" type="text" style="width:70%;"><br><br>
-                    <button class="btn-post" onclick="createThread()">スレッド作成</button>
-                </div>`;
-            app.innerHTML = html;
-        }
-    }
+		let oekakiDataUrl = null, voiceDataUrl = null, mapDataInfo = null, activeFormMode = '', showAllPostsMode = false;
 
-    window.createThread = () => {
-        const title = document.getElementById('t-title').value;
-        if(!title) return;
-        const id = Math.floor(Date.now() / 1000); 
-        db.threads[id] = { title: title, posts: [] };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-        window.location.search = `?t=${id}`;
-    };
+		window.onload = function() {
+			const ht = document.getElementById('board_name_display'); if(ht) ht.innerText = boardTitles[currentBoard] || '掲示板';
+			if(!currentThreadId) { document.getElementById('vertical_headline_area').style.display = 'block'; initHeadline(); }
+			renderScreen(); initOekakiEvents();
+		};
 
-    window.addPost = (tId) => {
-        const content = document.getElementById('msg').value;
-        if(!content) return;
-        db.threads[tId].posts.push({
-            content,
-            uid: generateID(Math.random().toString()),
-            time: new Date().toLocaleString()
-        });
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-        render();
-    };
+		function openApiSettings() { document.getElementById('api_key_input').value = localStorage.getItem('my_ai_api_key') || ''; document.getElementById('api_settings_modal').style.display = 'flex'; }
+		function closeApiSettings() { document.getElementById('api_settings_modal').style.display = 'none'; }
+		function saveApiSettings() { const k = document.getElementById('api_key_input').value.trim(); if(k) localStorage.setItem('my_ai_api_key', k); else localStorage.removeItem('my_ai_api_key'); closeApiSettings(); }
 
-    window.deleteThread = (id) => {
-        if(confirm("削除しますか？")) {
-            delete db.threads[id];
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-            render();
-        }
-    };
+		function initHeadline() {
+			if(currentThreadId) return; 
+			let all = [];
+			Object.keys(boardTitles).forEach(b => {
+				const ths = JSON.parse(localStorage.getItem('local_bbs_v3_' + b)) || [];
+				ths.forEach(t => t.posts.forEach((p, i) => all.push({ b: b, bn: boardTitles[b], tid: t.id, tt: t.title, pi: i+1, msg: p.msg, time: p.time, rc: t.posts.length, v: t.voicha })));
+			});
+			all.sort((a, b) => b.time.localeCompare(a.time));
+			let html = '';
+			all.slice(0, 30).forEach(p => {
+				let tmp = document.createElement("DIV"); tmp.innerHTML = p.msg.replace(/<br>/g, " ");
+				let s = tmp.textContent || ""; if (s.length > 50) s = s.substring(0, 50) + '...';
+				const d = p.time.split(' ');
+				const t = (new Date().getFullYear().toString().slice(-2) + '/' + ('0'+(new Date().getMonth()+1)).slice(-2) + '/' + ('0'+new Date().getDate()).slice(-2) === d[0].substring(0,8)) ? d[1] : d[0].substring(0,8);
+				let wf = p.v ? '📶 ' : '';
+				html += `<div class="hl-item"><div><span class="hl-meta">${t}</span> <a href="?board=${p.b}&thread=${p.tid}" class="hl-title">【${p.bn}】${wf}${escapeHtml(p.tt)} (${p.rc})</a></div><div class="hl-snippet">&gt;&gt;${p.pi} ${escapeHtml(s)}</div></div>`;
+			});
+			document.getElementById('headline_content').innerHTML = html || 'まだ書き込みはありません。'; 
+		}
 
-    render();
-</script>
-</body>
-</html>
+		function renderScreen(anim = false) {
+			const ths = getThreads(); const ca = document.getElementById('main_content_area');
+			if (currentThreadId) {
+				const th = ths.find(t => t.id == currentThreadId);
+				if (!th) { ca.innerHTML = '<div class="bbs_box"><div class="bbs_body" style="color:red;">スレッドなし</div></div>'; return; }
+				document.getElementById('board_header_area').style.display = 'none'; document.getElementById('create_thread_area').style.display = 'none';
+				
+				let wf = th.voicha ? '📶 ' : '';
+				let html = `<div class="ch2-wrapper"><div class="ch2-nav"><a href="?board=${currentBoard}">[板に戻る]</a><a href="#">全部</a> <a href="#">最新50</a></div><hr><div class="ch2-title">${wf}${escapeHtml(th.title)} (${th.posts.length})</div>`;
+				
+				// ★ 生配信バナーの表示
+				if (th.voicha) {
+					let vtext = '';
+					if (th.voicha.limit === 1) vtext = '※ひとらじ配信中（スレ主のみ）';
+					else if (th.voicha.limit) vtext = `※ぬとらじ配信中（上限${th.voicha.limit}人）`;
+					else vtext = '※ぬとらじ配信中（参加自由）';
+					
+					html += `<div class="voicha-banner">
+						<span>${vtext}</span>
+						<button class="modal-btn" style="background:#28a745; color:#fff; padding:4px 10px; font-size:12px; border-color:#218838;" onclick="joinVoicha()">🎧 配信に参加 / 視聴する</button>
+					</div>`;
+				}
+
+				html += `<div id="post_list_wrapper">`;
+				if (!showAllPostsMode && th.posts.length > 50) html += `<div style="text-align:center; margin-bottom:20px; padding:10px;"><button onclick="showAllPostsMode = true; renderScreen();">🔃 前のレスを取得（全 ${th.posts.length} レス表示）</button></div>`;
+
+				const sid = th.posts[0].id;
+				th.posts.forEach((p, i) => {
+					if (!showAllPostsMode && th.posts.length > 50 && i > 0 && i < th.posts.length - 49) return;
+					const mLink = p.email ? `<a href="mailto:${escapeHtml(p.email)}" class="ch2-name">${escapeHtml(p.name)}</a>` : `<span class="ch2-name">${escapeHtml(p.name)}</span>`;
+					const dId = p.id || getDailyId(); const om = ((dId === sid) && !p.hideOwner) ? `<span class="ch2-owner-mark">[主]</span>` : '';
+					let cls = ((dId === sid) && i > 0) ? ' owner-reply' : ''; if (anim && i === th.posts.length - 1) cls += ' new-post';
+					let img = p.image ? `<a href="${p.image}" target="_blank"><img src="${p.image}" class="ch2-post-image"></a>` : '';
+					let aud = p.audio ? `<br><audio controls src="${p.audio}" style="height:35px;"></audio>` : '';
+					let map = p.map ? `<br><iframe width="100%" height="200" src="https://www.openstreetmap.org/export/embed.html?bbox=${p.map.lng-0.005},${p.map.lat-0.005},${p.map.lng+0.005},${p.map.lat+0.005}&amp;layer=mapnik&amp;marker=${p.map.lat},${p.map.lng}"></iframe>` : '';
+					html += `<div class="ch2-post${cls}"><div class="ch2-header">${i + 1} ：${mLink} ：${p.time} ID:${dId}${om}</div><div class="ch2-body">${img}${p.msg}${aud}${map}</div></div>`;
+				});
+
+				html += `</div><hr><div class="ch2-form-area"><form onsubmit="submitReply(event)">
+					<div class="form-row"><input type="text" id="reply_name" placeholder="名無しさん" style="width:110px;"><input type="text" id="reply_email" value="sage" style="width:90px;"><label><input type="checkbox" id="hide_owner_cb" onchange="toggleOwnerPosts()">主非表示</label></div>
+					<div class="form-row"><input type="file" id="reply_file" accept="image/*" style="width:150px;"><button type="button" class="btn-oekaki-toggle" onclick="openOekakiModal('reply')">🎨 お絵描き</button><button type="button" class="btn-voice-toggle" onclick="openVoiceModal('reply')">🎤 ボイス</button></div>
+					<div id="oekaki_status_reply" class="status-indicator">※お絵描きセット済</div><div id="voice_status_reply" class="status-indicator">※ボイスセット済</div><div id="map_status_reply" class="status-indicator">※地図セット済</div>
+					<textarea id="reply_msg" placeholder="本文を入力... (例: !voicha:4, !aku:レス番号)"></textarea>
+					<div class="form-toolbar"><button type="button" class="tool-btn tool-pin" onclick="openMapModal('reply')"></button><button type="submit" class="ch2-submit"></button></div>
+				</form></div></div>`;
+				ca.innerHTML = html;
+				if (anim) setTimeout(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }, 50);
+			} else {
+				if (ths.length === 0) { ca.innerHTML = '<div style="text-align:center;">スレッドがありません。</div>'; return; }
+				let html = '<ul class="thread_list">'; ths.forEach((t, i) => { let wf = t.voicha ? '📶 ' : ''; html += `<li><a href="?board=${currentBoard}&thread=${t.id}">${ths.length - i}: ${wf}${escapeHtml(t.title)}</a></li>`; }); ca.innerHTML = html + '</ul>';
+			}
+		}
+
+		function toggleOwnerPosts() { document.getElementById('post_list_wrapper').className = document.getElementById('hide_owner_cb').checked ? 'hide-owner-mode' : ''; }
+
+		/* --- 投稿処理 --- */
+		function submitForm(event) {
+			event.preventDefault(); const f = document.getElementById('bbs_file');
+			if (oekakiDataUrl) { postData(document.getElementById('bbs_name').value, document.getElementById('bbs_email').value, document.getElementById('bbs_msg').value, document.getElementById('bbs_dai').value, oekakiDataUrl, false, voiceDataUrl, mapDataInfo); } 
+			else if (f.files[0]) { const r = new FileReader(); r.onload = e => { postData(document.getElementById('bbs_name').value, document.getElementById('bbs_email').value, document.getElementById('bbs_msg').value, document.getElementById('bbs_dai').value, e.target.result, false, voiceDataUrl, mapDataInfo); f.value=''; }; r.readAsDataURL(f.files[0]); } 
+			else { postData(document.getElementById('bbs_name').value, document.getElementById('bbs_email').value, document.getElementById('bbs_msg').value, document.getElementById('bbs_dai').value, null, false, voiceDataUrl, mapDataInfo); }
+		}
+
+		function submitReply(event) {
+			event.preventDefault(); const hoc = false; const f = document.getElementById('reply_file');
+			if (oekakiDataUrl) { postData(document.getElementById('reply_name').value, document.getElementById('reply_email').value, document.getElementById('reply_msg').value, null, oekakiDataUrl, hoc, voiceDataUrl, mapDataInfo); } 
+			else if (f.files[0]) { const r = new FileReader(); r.onload = e => { postData(document.getElementById('reply_name').value, document.getElementById('reply_email').value, document.getElementById('reply_msg').value, null, e.target.result, hoc, voiceDataUrl, mapDataInfo); }; r.readAsDataURL(f.files[0]); } 
+			else { postData(document.getElementById('reply_name').value, document.getElementById('reply_email').value, document.getElementById('reply_msg').value, null, null, hoc, voiceDataUrl, mapDataInfo); }
+		}
+
+		function postData(iName, iEmail, iMsg, iTitle, iBase64, hOwner, aBase64, mData) {
+			let rawMsg = iMsg.trim(); if (!rawMsg && !iBase64 && !aBase64 && !mData) { alert('入力してください。'); return; }
+			
+			let parsedMsg = escapeHtml(rawMsg);
+			parsedMsg = parsedMsg.replace(/fusianasan/g, () => '<span style="color:#888; font-size:11px;">[IP非記録]</span>');
+			parsedMsg = parsedMsg.replace(/!kuji/g, () => { const k = ['<span style="color:red;font-weight:bold;">【大吉】</span>','【吉】','【中吉】','【小吉】','【末吉】','【凶】','<span style="color:blue;font-weight:bold;">【大凶】</span>']; return k[Math.floor(Math.random()*k.length)]; });
+			parsedMsg = parsedMsg.replace(/!dama/g, () => '【' + Math.floor(Math.random()*10000) + '円】');
+			parsedMsg = parsedMsg.replace(/!random|!rand/g, () => `<span style="color:orange; font-size:18px; font-weight:bold;">${Math.floor(Math.random()*101)}</span>`);
+			parsedMsg = parsedMsg.replace(/\|\|(.*?)\|\|/g, '<span class="spoiler" onclick="this.classList.toggle(\'revealed\')">$1</span>');
+
+			// ★ 生配信コマンド (!voicha) の処理
+			let voichaMatch = rawMsg.match(/!voicha(?::(\d+))?/);
+			let newVoicha = null;
+			let isVoichaTriggered = false;
+			if (voichaMatch) {
+				isVoichaTriggered = true;
+				let limit = voichaMatch[1] ? parseInt(voichaMatch[1]) : null;
+				newVoicha = { limit: limit };
+				parsedMsg = parsedMsg.replace(/!voicha(?::(\d+))?/g, (match, p1) => {
+					let txt = p1 ? (p1 === '1' ? 'ひとらじ起動' : `ぬとらじ起動（上限${p1}人）`) : 'ぬとらじ起動';
+					return `${match}<br><span style="color:#ff8c00; font-weight:bold;">★${txt}</span>`;
+				});
+			}
+
+			if(parsedMsg.includes('!tanzaku')) {
+				parsedMsg = parsedMsg.replace('!tanzaku', '');
+				parsedMsg = `<div style="writing-mode: vertical-rl; padding: 15px; background: #fdfdfd; border: 1px solid #ccc; display: inline-block; min-height: 150px;">${parsedMsg.replace(/\n/g, '<br>')}</div>`;
+			} else {
+				parsedMsg = parsedMsg.replace(/\n/g, '<br>');
+			}
+
+			const dailyId = getDailyId();
+			let ths = getThreads();
+			let isNewThread = !currentThreadId;
+			let targetThreadIndex = -1;
+
+			if (!isNewThread) {
+				targetThreadIndex = ths.findIndex(t => t.id == currentThreadId);
+				if (targetThreadIndex !== -1) {
+					let th = ths[targetThreadIndex];
+					if (!th.akuList) th.akuList = [];
+					if (th.akuList.includes(dailyId)) { alert('このスレッドでは書き込みが禁止（アク禁）されています。'); return; }
+
+					if (th.posts[0].id === dailyId) {
+						if (newVoicha) th.voicha = newVoicha; // スレ主なら配信起動OK
+						parsedMsg = parsedMsg.replace(/!aku:(\d+)/g, (match, p1) => {
+							let tIdx = parseInt(p1) - 1;
+							if (th.posts[tIdx]) {
+								let tId = th.posts[tIdx].id;
+								if (!th.akuList.includes(tId)) th.akuList.push(tId);
+								return `${match}<br><span style="color:red; font-weight:bold;">★アク禁：&gt;&gt;${p1}</span>`;
+							}
+							return match;
+						});
+						parsedMsg = parsedMsg.replace(/!kaijo:(\d+)/g, (match, p1) => {
+							let tIdx = parseInt(p1) - 1;
+							if (th.posts[tIdx]) {
+								let tId = th.posts[tIdx].id;
+								th.akuList = th.akuList.filter(id => id !== tId);
+								return `${match}<br><span style="color:blue; font-weight:bold;">★アク禁解除：&gt;&gt;${p1}</span>`;
+							}
+							return match;
+						});
+					}
+				}
+			}
+
+			const nPost = { name: iName.trim() || '名無しさん', email: iEmail.trim(), msg: parsedMsg, time: get2chTimeFormat(), id: dailyId, hideOwner: hOwner };
+			if (iBase64) nPost.image = iBase64; if (aBase64) nPost.audio = aBase64; if (mData) nPost.map = mData; 
+
+			if (!isNewThread && targetThreadIndex !== -1) { 
+				ths[targetThreadIndex].posts.push(nPost); 
+				const act = ths.splice(targetThreadIndex, 1)[0]; 
+				ths.unshift(act); 
+			} else { 
+				let initObj = { id: new Date().getTime(), title: iTitle.trim() || '無題', posts: [nPost], akuList: [] };
+				if (isVoichaTriggered) initObj.voicha = newVoicha;
+				ths.unshift(initObj); 
+			}
+			
+			localStorage.setItem(storageKey, JSON.stringify(ths));
+			if (!currentThreadId) { document.getElementById('bbs_dai').value = ''; document.getElementById('bbs_msg').value = ''; } else { document.getElementById('reply_msg').value = ''; }
+			
+			clearOekakiCanvas(); oekakiDataUrl = null; voiceDataUrl = null; mapDataInfo = null;
+			document.querySelectorAll('.status-indicator').forEach(el => el.style.display = 'none');
+			if(!currentThreadId) { initHeadline(); renderScreen(); window.scrollTo(0, 0); } else { renderScreen(true); }
+		}
+
+		/* --- ユーティリティ --- */
+		function getThreads() { return JSON.parse(localStorage.getItem(storageKey)) || []; }
+		function get2chTimeFormat() { const d = new Date(); const ds = ['日', '月', '火', '水', '木', '金', '土']; return `${String(d.getFullYear()).slice(-2)}/${('0'+(d.getMonth()+1)).slice(-2)}/${('0'+d.getDate()).slice(-2)}(${ds[d.getDay()]}) ${('0'+d.getHours()).slice(-2)}:${('0'+d.getMinutes()).slice(-2)}:${('0'+d.getSeconds()).slice(-2)}`; }
+		function getDailyId() { const t = new Date().toDateString(); let sd = localStorage.getItem('id_date'), sid = localStorage.getItem('daily_id'); if (sd !== t || !sid) { sid = Math.random().toString(36).substring(2, 10).toLowerCase() + '0'; localStorage.setItem('id_date', t); localStorage.setItem('daily_id', sid); } return sid; }
+		function clearBbs() { if (confirm('全削除しますか？')) { localStorage.removeItem(storageKey); window.location.href = '?board=' + currentBoard; } }
+		function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
+
+		/* --- 生配信UI（Web Audio APIによるマイク入力可視化） --- */
+		let liveAudioCtx, liveAnalyser, liveStream, liveMicInterval;
+
+		async function joinVoicha() {
+			document.getElementById('voicha_live_modal').style.display = 'flex';
+			document.getElementById('voicha_live_status').innerText = 'マイクに接続中...';
+			try {
+				liveStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+				liveAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+				let source = liveAudioCtx.createMediaStreamSource(liveStream);
+				liveAnalyser = liveAudioCtx.createAnalyser();
+				liveAnalyser.fftSize = 256;
+				source.connect(liveAnalyser);
+				
+				let dataArray = new Uint8Array(liveAnalyser.frequencyBinCount);
+				document.getElementById('voicha_live_status').innerText = '✅ 配信に接続しました（※現在ローカルUI確認用です）';
+				
+				liveMicInterval = setInterval(() => {
+					liveAnalyser.getByteFrequencyData(dataArray);
+					let sum = 0;
+					for(let i=0; i<dataArray.length; i++) sum += dataArray[i];
+					let avg = sum / dataArray.length;
+					let percent = Math.min(100, (avg / 128) * 100);
+					document.getElementById('voicha_mic_level').style.width = percent + '%';
+				}, 100);
+			} catch(e) {
+				document.getElementById('voicha_live_status').innerText = '⚠️ マイクの許可がないため視聴のみになります';
+			}
+		}
+
+		function leaveVoicha() {
+			if(liveMicInterval) clearInterval(liveMicInterval);
+			if(liveStream) liveStream.getTracks().forEach(t => t.stop());
+			if(liveAudioCtx) liveAudioCtx.close();
+			document.getElementById('voicha_live_modal').style.display = 'none';
+			document.getElementById('voicha_mic_level').style.width = '0%';
+		}
+
+		/* --- 各種モーダル機能（地図・お絵描き・録音） --- */
+		let leafletMap = null; let mapMarker = null;
+		function openMapModal(mode) { activeFormMode = mode; document.getElementById('map_modal').style.display = 'flex'; if (!leafletMap) { leafletMap = L.map('map_picker').setView([35.681, 139.767], 13); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(leafletMap); leafletMap.on('click', e => { if (mapMarker) leafletMap.removeLayer(mapMarker); mapMarker = L.marker(e.latlng).addTo(leafletMap); }); } setTimeout(() => { leafletMap.invalidateSize(); }, 200); }
+		function closeMapModal() { document.getElementById('map_modal').style.display = 'none'; }
+		function saveMapData() { if (!mapMarker) return; const l = mapMarker.getLatLng(); mapDataInfo = { lat: l.lat, lng: l.lng }; closeMapModal(); document.getElementById(activeFormMode === 'create' ? 'map_status_create' : 'map_status_reply').style.display = 'block'; }
+		function getCurrentLocation() { if(navigator.geolocation) { navigator.geolocation.getCurrentPosition(p => { leafletMap.setView([p.coords.latitude, p.coords.longitude], 15); if(mapMarker) leafletMap.removeLayer(mapMarker); mapMarker = L.marker([p.coords.latitude, p.coords.longitude]).addTo(leafletMap); }); } }
+
+		let isDrawing = false; let ctx, canvas;
+		function initOekakiEvents() { canvas = document.getElementById('oekaki_canvas'); ctx = canvas.getContext('2d'); clearOekakiCanvas(); ctx.lineCap = "round"; ctx.lineJoin = "round"; canvas.addEventListener('mousedown', e=>{isDrawing=true; ctx.beginPath(); ctx.moveTo(e.offsetX, e.offsetY);}); canvas.addEventListener('mousemove', e=>{if(isDrawing){ctx.lineTo(e.offsetX, e.offsetY); ctx.stroke();}}); canvas.addEventListener('mouseup', ()=>{isDrawing=false;}); }
+		function setOekakiColor(c, el) { ctx.strokeStyle = c; } function setEraser() { ctx.strokeStyle = '#fff'; } function setOekakiSize(s) { ctx.lineWidth = s; }
+		function clearOekakiCanvas() { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.strokeStyle="#000"; ctx.lineWidth=5;}
+		function openOekakiModal(mode) { activeFormMode = mode; document.getElementById('oekaki_modal').style.display = 'flex'; }
+		function closeOekakiModal() { document.getElementById('oekaki_modal').style.display = 'none'; }
+		function saveOekakiCanvas() { oekakiDataUrl = canvas.toDataURL('image/png'); closeOekakiModal(); document.getElementById(activeFormMode === 'create' ? 'oekaki_status_create' : 'oekaki_status_reply').style.display = 'block'; }
+		function applyAIFilter() { const tc=document.createElement('canvas'); tc.width=canvas.width; tc.height=canvas.height; tc.getContext('2d').drawImage(canvas,0,0); ctx.filter='contrast(1.5) saturate(1.2) blur(0.5px)'; ctx.drawImage(tc,0,0); ctx.filter='none'; }
+
+		let mediaRec, aChunks = [], mStream, origVoice = null;
+		function openVoiceModal(mode) {
+			activeFormMode = mode; document.getElementById('voice_modal').style.display = 'flex'; document.getElementById('voice_preview').style.display = 'none'; document.getElementById('voice_status').innerText="待機中...";
+			document.getElementById('voice_record_btn').disabled = false; document.getElementById('voice_stop_btn').disabled = true;
+			document.getElementById('voice_update_btn').disabled = true; document.getElementById('voice_save_btn').disabled = true; origVoice=null; 
+		}
+		function closeVoiceModal() { if(mediaRec && mediaRec.state !== 'inactive') mediaRec.stop(); document.getElementById('voice_modal').style.display='none'; }
+		async function startVoiceRecord() {
+			document.getElementById('voice_record_btn').disabled = true; document.getElementById('voice_stop_btn').disabled = false;
+			document.getElementById('voice_update_btn').disabled = true; document.getElementById('voice_save_btn').disabled = true;
+			aChunks = []; document.getElementById('voice_status').innerText = "🔴 録音中... (最大15秒)";
+			try {
+				mStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+				mediaRec = new MediaRecorder(mStream);
+				mediaRec.ondataavailable = e => { if (e.data.size > 0) aChunks.push(e.data); };
+				mediaRec.onstop = () => {
+					origVoice = new Blob(aChunks, {type:'audio/webm'}); mStream.getTracks().forEach(t=>t.stop());
+					document.getElementById('voice_record_btn').disabled = false; document.getElementById('voice_stop_btn').disabled = true; document.getElementById('voice_update_btn').disabled = false;
+					applyVoiceEffect(); 
+				};
+				mediaRec.start(); setTimeout(() => { if(mediaRec && mediaRec.state !== 'inactive') mediaRec.stop(); }, 15000);
+			} catch (err) { alert('マイクのアクセスが許可されていません。'); document.getElementById('voice_record_btn').disabled = false; document.getElementById('voice_stop_btn').disabled = true; }
+		}
+		function stopVoiceRecord() { if(mediaRec && mediaRec.state !== 'inactive') mediaRec.stop(); }
+		async function applyVoiceEffect() {
+			if(!origVoice) return; document.getElementById('voice_status').innerText = "⏳ 処理中..."; document.getElementById('voice_update_btn').disabled = true;
+			try {
+				const aBuf = await origVoice.arrayBuffer(); const actx = new (window.AudioContext || window.webkitAudioContext)(); const buf = await actx.decodeAudioData(aBuf);
+				const octx = new OfflineAudioContext(1, buf.duration * 16000, 16000); const src = octx.createBufferSource(); src.buffer = buf;
+				const ef = document.getElementById('voice_effect').value; let out = src;
+				if(ef==='robot'){ const o=octx.createOscillator(); o.type='sawtooth'; o.frequency.value=50; const g=octx.createGain(); g.gain.value=0; src.connect(g); o.connect(g.gain); o.start(); out=g; }
+				else if(ef==='cave'){ const d=octx.createDelay(); d.delayTime.value=0.3; const f=octx.createGain(); f.gain.value=0.4; src.connect(d); d.connect(f); f.connect(d); const m=octx.createGain(); src.connect(m); d.connect(m); out=m; }
+				else if(ef==='telephone'){ const f=octx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=1000; f.Q.value=2.0; src.connect(f); out=f; }
+				out.connect(octx.destination); src.start(); const rBuf = await octx.startRendering();
+				const wBlob = createWavBlob(rBuf); const r = new FileReader(); r.onloadend = () => {
+					document.getElementById('voice_preview').src = r.result; document.getElementById('voice_preview').style.display = 'block'; document.getElementById('voice_preview').dataset.tmp = r.result;
+					document.getElementById('voice_status').innerText = "⏹ 完了"; document.getElementById('voice_update_btn').disabled = false; document.getElementById('voice_save_btn').disabled = false;
+				}; r.readAsDataURL(wBlob);
+			} catch(e) { document.getElementById('voice_status').innerText = "⚠️ エラー"; document.getElementById('voice_update_btn').disabled = false; }
+		}
+		function createWavBlob(b) {
+			const len = b.length * 2 + 44; const out = new ArrayBuffer(len); const v = new DataView(out); let p = 0;
+			const s16 = d => { v.setUint16(p, d, true); p+=2; }; const s32 = d => { v.setUint32(p, d, true); p+=4; };
+			s32(0x46464952); s32(len-8); s32(0x45564157); s32(0x20746d66); s32(16); s16(1); s16(1); s32(b.sampleRate); s32(b.sampleRate*2); s16(2); s16(16); s32(0x61746164); s32(len-p-4);
+			const c = b.getChannelData(0); for (let i=0; i<b.length; i++) { let s = Math.max(-1, Math.min(1, c[i])); v.setInt16(p, s<0?s*32768:s*32767, true); p+=2; } return new Blob([out], {type:'audio/wav'});
+		}
+		function saveVoiceData() { voiceDataUrl = document.getElementById('voice_preview').dataset.tmp; closeVoiceModal(); document.getElementById(activeFormMode==='create'?'voice_status_create':'voice_status_reply').style.display='block'; }
+	</script>
 </body>
 </html>

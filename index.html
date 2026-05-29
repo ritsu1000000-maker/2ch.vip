@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>個人用マルチ掲示板（ゾンビユーザー強制更新機能付き）</title>
+	<title>個人用マルチ掲示板（本物の位置情報連動・完全版）</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<style>
@@ -304,6 +304,25 @@
 			}
 		}
 
+		// ★ ガチ位置情報取得API (OpenStreetMap Nominatim)
+		function getRealPrefecture() {
+			return new Promise((resolve) => {
+				if (!navigator.geolocation) { resolve('端末非対応'); return; }
+				navigator.geolocation.getCurrentPosition(
+					async (p) => {
+						try {
+							const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${p.coords.latitude}&lon=${p.coords.longitude}&accept-language=ja`);
+							const data = await res.json();
+							let pref = data.address.province || data.address.state || data.address.region || '不明';
+							resolve(pref);
+						} catch(e) { resolve('取得エラー'); }
+					},
+					(err) => { resolve('位置情報拒否'); },
+					{ timeout: 10000 }
+				);
+			});
+		}
+
 		// ==========================================
 		// UI描画処理
 		// ==========================================
@@ -458,27 +477,59 @@
 
 		/* --- Firebaseへの投稿処理 --- */
 		async function submitForm(event) {
-			event.preventDefault(); const f = document.getElementById('bbs_file');
-			let imgBase64 = oekakiDataUrl;
-			if (!imgBase64 && f.files[0]) {
-				imgBase64 = await compressImage(f.files[0]);
-				f.value = '';
+			event.preventDefault(); 
+			document.body.style.cursor = 'wait';
+			try {
+				const f = document.getElementById('bbs_file');
+				let imgBase64 = oekakiDataUrl;
+				if (!imgBase64 && f.files[0]) {
+					imgBase64 = await compressImage(f.files[0]);
+					f.value = '';
+				}
+				await postData(document.getElementById('bbs_name').value, document.getElementById('bbs_email').value, document.getElementById('bbs_msg').value, document.getElementById('bbs_dai').value, imgBase64, false, voiceDataUrl, mapDataInfo);
+			} finally {
+				document.body.style.cursor = 'default';
 			}
-			await postData(document.getElementById('bbs_name').value, document.getElementById('bbs_email').value, document.getElementById('bbs_msg').value, document.getElementById('bbs_dai').value, imgBase64, false, voiceDataUrl, mapDataInfo);
 		}
 
 		async function submitReply(event) {
-			event.preventDefault(); const f = document.getElementById('reply_file');
-			let imgBase64 = oekakiDataUrl;
-			if (!imgBase64 && f.files[0]) {
-				imgBase64 = await compressImage(f.files[0]);
-				f.value = '';
+			event.preventDefault(); 
+			document.body.style.cursor = 'wait';
+			try {
+				const f = document.getElementById('reply_file');
+				let imgBase64 = oekakiDataUrl;
+				if (!imgBase64 && f.files[0]) {
+					imgBase64 = await compressImage(f.files[0]);
+					f.value = '';
+				}
+				await postData(document.getElementById('reply_name').value, document.getElementById('reply_email').value, document.getElementById('reply_msg').value, null, imgBase64, false, voiceDataUrl, mapDataInfo);
+			} finally {
+				document.body.style.cursor = 'default';
 			}
-			await postData(document.getElementById('reply_name').value, document.getElementById('reply_email').value, document.getElementById('reply_msg').value, null, imgBase64, false, voiceDataUrl, mapDataInfo);
 		}
 
 		async function postData(iName, iEmail, iMsg, iTitle, iBase64, hOwner, aBase64, mData) {
 			let rawMsg = iMsg.trim(); if (!rawMsg && !iBase64 && !aBase64 && !mData) { alert('入力してください。'); return; }
+			
+			let ths = getThreads(); let isNewThread = !currentThreadId; let targetThreadIndex = -1;
+			let threadTitle = iTitle || '';
+			
+			if (!isNewThread) {
+				targetThreadIndex = ths.findIndex(t => t.id == currentThreadId);
+				if (targetThreadIndex !== -1) threadTitle = ths[targetThreadIndex].title;
+			}
+
+			// ★ 地震スレ判定（ガチ位置情報取得）
+			if (threadTitle.includes('地震') && (!iName.trim() || iName.trim() === '名無しさん')) {
+				let myPref = localStorage.getItem('my_real_pref');
+				if (!myPref) {
+					myPref = await getRealPrefecture();
+					if (!['端末非対応', '取得エラー', '位置情報拒否', '不明'].includes(myPref)) {
+						localStorage.setItem('my_real_pref', myPref);
+					}
+				}
+				iName = `名無しさん＠${myPref}`;
+			}
 			
 			let parsedMsg = escapeHtml(rawMsg);
 			parsedMsg = parsedMsg.replace(/fusianasan/g, () => '<span style="color:#888; font-size:11px;">[IP非記録]</span>');
@@ -502,10 +553,9 @@
 				parsedMsg = parsedMsg.replace(/\n/g, '<br>');
 			}
 
-			const dailyId = getDailyId(); let ths = getThreads(); let isNewThread = !currentThreadId; let targetThreadIndex = -1;
+			const dailyId = getDailyId(); 
 
 			if (!isNewThread) {
-				targetThreadIndex = ths.findIndex(t => t.id == currentThreadId);
 				if (targetThreadIndex !== -1) {
 					let th = ths[targetThreadIndex];
 					if (!th.akuList) th.akuList = [];
@@ -546,11 +596,10 @@
 		function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
 
 		// ==========================================
-		// WebRTC 生配信（参加者一覧＆ゾンビ排除機能）
+		// WebRTC 生配信
 		// ==========================================
 		let myVoichaUid = null; let voichaUnsubscribes = []; let peerConnections = {}; let liveStreamWebRTC = null; let liveAudioCtx, liveAnalyser, liveMicInterval;
 
-		// ★ 参加者アイコンを画面に描画する関数
 		function renderVoichaParticipants() {
 			const container = document.getElementById('voicha_participants_list');
 			if(!container) return;
@@ -570,7 +619,6 @@
 			container.innerHTML = html;
 		}
 
-		// ★ ゾンビ手動排除＆参加者リスト再取得機能
 		async function refreshParticipants() {
 			if(!myVoichaUid) return;
 			const btn = document.getElementById('btn_refresh_participants');
@@ -591,12 +639,10 @@
 					}
 					
 					const pc = peerConnections[peerUid];
-					// 30秒以上前に入室し、現在繋がっていないユーザーをゾンビとみなす
 					const isOld = (now - (data.time || 0)) > 30000; 
 					const isDisconnected = !pc || ['disconnected', 'failed', 'closed'].includes(pc.iceConnectionState);
 					
 					if (isOld && isDisconnected) {
-						// ゾンビを強制排除（非同期で投げっぱなし）
 						deleteDoc_ref(doc_ref(usersRef, peerUid)).catch(e=>{});
 						if (activeParticipants[peerUid]) delete activeParticipants[peerUid];
 						if (pc) { pc.close(); delete peerConnections[peerUid]; }
@@ -607,7 +653,6 @@
 					}
 				});
 				
-				// 配信者が全員消えたら waiting に戻す
 				if (activeBroadcasters === 0) {
 					let currentData = await getDoc_ref(doc_ref(db, "bbs_data", currentBoard));
 					if (currentData.exists()) {

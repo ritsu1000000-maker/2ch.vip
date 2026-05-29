@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>個人用マルチ掲示板（画像圧縮・バグ修正版）</title>
+	<title>個人用マルチ掲示板（配信求む！機能追加版）</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<style>
@@ -64,7 +64,7 @@
 		#map_picker { height: 300px; width: 100%; background: #eee; border: 1px solid #ccc; margin-bottom: 10px; z-index: 2001; }
 		
 		/* --- 生配信UI用スタイル --- */
-		.voicha-banner { background-color:#fff3cd; color:#856404; padding:8px 15px; margin-bottom:15px; border:1px solid #ffeeba; border-radius:4px; font-weight:bold; display:flex; justify-content:space-between; align-items:center; flex-wrap: wrap; gap: 10px;}
+		.voicha-banner { padding:8px 15px; margin-bottom:15px; border:1px solid; border-radius:4px; font-weight:bold; display:flex; justify-content:space-between; align-items:center; flex-wrap: wrap; gap: 10px;}
 		.voicha-buttons { display: flex; gap: 8px; }
 		.live-user-icon { width: 50px; height: 50px; background: #e0e0e0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; margin: 0 auto; border: 3px solid #28a745; }
 		.live-mic-bar { width: 100%; height: 6px; background: #ccc; margin-top: 8px; border-radius: 3px; overflow: hidden; }
@@ -207,9 +207,10 @@
 
 		let isMicMuted = false;
 		let isSpeakerMuted = false;
+		let amIBroadcaster = false; // 自分が配信者かどうかを保持
 
 		// Firebase用グローバル変数
-		let db, doc_ref, setDoc_ref, onSnapshot_ref, collection_ref, addDoc_ref, deleteDoc_ref, query_ref, where_ref, getDocs_ref;
+		let db, doc_ref, setDoc_ref, onSnapshot_ref, collection_ref, addDoc_ref, deleteDoc_ref, query_ref, where_ref, getDocs_ref, getDoc_ref;
 		let allBoardsCache = { 'main': [], 'game': [], 'music': [], 'memo': [] };
 		let cachedThreads = [];
 		let justPosted = false; 
@@ -223,7 +224,7 @@
 
 			try {
 				const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js");
-				const { getFirestore, doc, setDoc, onSnapshot, collection, addDoc, deleteDoc, query, where, getDocs } = await import("https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js");
+				const { getFirestore, doc, setDoc, onSnapshot, collection, addDoc, deleteDoc, query, where, getDocs, getDoc } = await import("https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js");
 
 				const firebaseConfig = {
 					apiKey: "AIzaSyBCQArL0Q1wDveRywCpet5Nor3PuRYt7fM",
@@ -238,7 +239,7 @@
 				const app = initializeApp(firebaseConfig);
 				db = getFirestore(app);
 				
-				doc_ref = doc; setDoc_ref = setDoc; onSnapshot_ref = onSnapshot; 
+				doc_ref = doc; setDoc_ref = setDoc; onSnapshot_ref = onSnapshot; getDoc_ref = getDoc;
 				collection_ref = collection; addDoc_ref = addDoc; deleteDoc_ref = deleteDoc;
 				query_ref = query; where_ref = where; getDocs_ref = getDocs;
 
@@ -294,7 +295,14 @@
 				let s = tmp.textContent || ""; if (s.length > 50) s = s.substring(0, 50) + '...';
 				const d = p.time.split(' ');
 				const t = (new Date().getFullYear().toString().slice(-2) + '/' + ('0'+(new Date().getMonth()+1)).slice(-2) + '/' + ('0'+new Date().getDate()).slice(-2) === d[0].substring(0,8)) ? d[1] : d[0].substring(0,8);
-				let wf = p.v ? '📶 ' : '';
+				
+				// ★ 配信マークの切り替え処理
+				let wf = '';
+				if (p.v) {
+					if (p.v.status === 'waiting') wf = '🙇‍♂️配信求む！ ';
+					else wf = '📶 ';
+				}
+				
 				html += `<div class="hl-item"><div><span class="hl-meta">${t}</span> <a href="?board=${p.b}&thread=${p.tid}" class="hl-title">【${p.bn}】${wf}${escapeHtml(p.tt)} (${p.rc})</a></div><div class="hl-snippet">&gt;&gt;${p.pi} ${escapeHtml(s)}</div></div>`;
 			});
 			document.getElementById('headline_content').innerHTML = html || '<div style="padding:10px; color:#666;">まだ書き込みはありません。</div>'; 
@@ -312,20 +320,31 @@
 				if (!th) { ca.innerHTML = '<div class="bbs_box"><div class="bbs_body" style="color:red;">スレッドが削除されたか存在しません。</div></div>'; return; }
 				document.getElementById('board_header_area').style.display = 'none'; document.getElementById('create_thread_area').style.display = 'none';
 				
-				let wf = th.voicha ? '📶 ' : '';
+				let wf = '';
+				if (th.voicha) {
+					if (th.voicha.status === 'waiting') wf = '🙇‍♂️配信求む！ ';
+					else wf = '📶 ';
+				}
+				
 				let html = `<div class="ch2-wrapper">
 					<div class="ch2-nav"><a href="?board=${currentBoard}">[板に戻る]</a><a href="#">全部</a> <a href="#">最新50</a> <a href="#">まとめる</a> | <a href="#">設定</a> | <a href="#">履歴</a><br>前 次 <a href="#">1-</a></div>
 					<div class="ch2-search"><a href="#" onclick="showImageGallery(); return false;" style="font-weight:bold;">画像一覧</a>　<input type="text" placeholder="キーワード入力" size="20"><button style="font-size:12px; padding:1px 6px;">スレ内検索</button></div>
 					<hr style="border:0; border-top:1px solid #ccc; margin:10px 0;">
 					<div class="ch2-title">${wf}${escapeHtml(th.title)} (${th.posts.length})</div>`;
 				
+				// ★ 生配信バナーの表示切り替え
 				if (th.voicha) {
 					let vtext = '';
-					if (th.voicha.limit === 1) vtext = '※ひとらじ配信中（スレ主のみ）';
-					else if (th.voicha.limit) vtext = `※ぬとらじ配信中（上限${th.voicha.limit}人）`;
-					else vtext = '※ぬとらじ配信中（参加自由）';
+					let isWaiting = th.voicha.status === 'waiting';
+					let statusText = isWaiting ? '（配信求む！）' : '配信中';
 					
-					html += `<div class="voicha-banner">
+					if (th.voicha.limit === 1) vtext = `※ひとらじ${statusText}（スレ主のみ）`;
+					else if (th.voicha.limit) vtext = `※ぬとらじ${statusText}（上限${th.voicha.limit}人）`;
+					else vtext = `※ぬとらじ${statusText}（参加自由）`;
+					
+					let bannerStyle = isWaiting ? "background-color:#e2e3e5; color:#383d41; border-color:#d6d8db;" : "background-color:#fff3cd; color:#856404; border-color:#ffeeba;";
+					
+					html += `<div class="voicha-banner" style="${bannerStyle}">
 						<span>${vtext}</span>
 						<div class="voicha-buttons">
 							<button class="modal-btn" style="background:#007bff; color:#fff; padding:4px 10px; font-size:12px; border-color:#0062cc;" onclick="joinVoicha(false)">🎧 視聴する</button>
@@ -365,13 +384,20 @@
 				if (anim) setTimeout(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }, 50);
 			} else {
 				if (ths.length === 0) { ca.innerHTML = '<div style="text-align:center;">スレッドがありません。</div>'; return; }
-				let html = '<ul class="thread_list">'; ths.forEach((t, i) => { let wf = t.voicha ? '📶 ' : ''; html += `<li><a href="?board=${currentBoard}&thread=${t.id}">${ths.length - i}: ${wf}${escapeHtml(t.title)}</a></li>`; }); ca.innerHTML = html + '</ul>';
+				let html = '<ul class="thread_list">'; ths.forEach((t, i) => { 
+					let wf = '';
+					if (t.voicha) {
+						if (t.voicha.status === 'waiting') wf = '🙇‍♂️配信求む！ ';
+						else wf = '📶 ';
+					}
+					html += `<li><a href="?board=${currentBoard}&thread=${t.id}">${ths.length - i}: ${wf}${escapeHtml(t.title)}</a></li>`; 
+				}); 
+				ca.innerHTML = html + '</ul>';
 			}
 		}
 
 		function toggleOwnerPosts() { isHideOwnerMode = document.getElementById('hide_owner_cb').checked; document.getElementById('post_list_wrapper').className = isHideOwnerMode ? 'hide-owner-mode' : ''; }
 
-		// ★ 画像圧縮処理（Firebaseの1MB制限回避用）
 		function compressImage(file) {
 			return new Promise(resolve => {
 				const reader = new FileReader();
@@ -380,7 +406,7 @@
 					img.onload = () => {
 						const canvas = document.createElement('canvas');
 						let w = img.width, h = img.height;
-						const max = 800; // 最大800pxにリサイズ
+						const max = 800; 
 						if (w > max || h > max) {
 							if (w > h) { h *= max / w; w = max; }
 							else { w *= max / h; h = max; }
@@ -388,7 +414,7 @@
 						canvas.width = w; canvas.height = h;
 						const ctx = canvas.getContext('2d');
 						ctx.drawImage(img, 0, 0, w, h);
-						resolve(canvas.toDataURL('image/jpeg', 0.7)); // 圧縮率70%でJPEG化
+						resolve(canvas.toDataURL('image/jpeg', 0.7)); 
 					};
 					img.src = e.target.result;
 				};
@@ -401,7 +427,7 @@
 			event.preventDefault(); const f = document.getElementById('bbs_file');
 			let imgBase64 = oekakiDataUrl;
 			if (!imgBase64 && f.files[0]) {
-				imgBase64 = await compressImage(f.files[0]); // 自動圧縮
+				imgBase64 = await compressImage(f.files[0]);
 				f.value = '';
 			}
 			await postData(document.getElementById('bbs_name').value, document.getElementById('bbs_email').value, document.getElementById('bbs_msg').value, document.getElementById('bbs_dai').value, imgBase64, false, voiceDataUrl, mapDataInfo);
@@ -411,7 +437,7 @@
 			event.preventDefault(); const f = document.getElementById('reply_file');
 			let imgBase64 = oekakiDataUrl;
 			if (!imgBase64 && f.files[0]) {
-				imgBase64 = await compressImage(f.files[0]); // 自動圧縮
+				imgBase64 = await compressImage(f.files[0]);
 				f.value = '';
 			}
 			await postData(document.getElementById('reply_name').value, document.getElementById('reply_email').value, document.getElementById('reply_msg').value, null, imgBase64, false, voiceDataUrl, mapDataInfo);
@@ -430,7 +456,9 @@
 			let voichaMatch = rawMsg.match(/!voicha(?::(\d+))?/);
 			let newVoicha = null; let isVoichaTriggered = false;
 			if (voichaMatch) {
-				isVoichaTriggered = true; let limit = voichaMatch[1] ? parseInt(voichaMatch[1]) : null; newVoicha = { limit: limit };
+				isVoichaTriggered = true; let limit = voichaMatch[1] ? parseInt(voichaMatch[1]) : null; 
+				// ★コマンド起動時は「waiting」にする
+				newVoicha = { limit: limit, status: 'waiting' };
 				parsedMsg = parsedMsg.replace(/!voicha(?::(\d+))?/g, (match, p1) => { let txt = p1 ? (p1 === '1' ? 'ひとらじ起動' : `ぬとらじ起動（上限${p1}人）`) : 'ぬとらじ起動'; return `${match}<br><span style="color:#ff8c00; font-weight:bold;">★${txt}</span>`; });
 			}
 
@@ -469,7 +497,7 @@
 			}
 			
 			try { await setDoc_ref(doc_ref(db, "bbs_data", currentBoard), { data: JSON.stringify(ths) }); } 
-			catch(e) { console.error(e); alert("通信エラーが発生しました。"); return; }
+			catch(e) { console.error(e); alert("通信エラーが発生しました。容量が大きい可能性があります。"); return; }
 			
 			if (!currentThreadId) { document.getElementById('bbs_dai').value = ''; document.getElementById('bbs_msg').value = ''; } else { document.getElementById('reply_msg').value = ''; }
 			
@@ -507,12 +535,13 @@
 		}
 
 		async function joinVoicha(isBroadcaster) {
+			amIBroadcaster = isBroadcaster; // ★グローバルに保持
 			isMicMuted = false; isSpeakerMuted = false;
 			const btnMic = document.getElementById('btn_mute_mic');
 			btnMic.innerText = '🎤 マイク ON'; btnMic.style.background = '#f0f0f0'; btnMic.style.color = '#333';
 			const btnSpk = document.getElementById('btn_mute_speaker');
 			btnSpk.innerText = '🔈 スピーカー ON'; btnSpk.style.background = '#f0f0f0'; btnSpk.style.color = '#333';
-			if (isBroadcaster) btnMic.style.display = 'inline-block'; else btnMic.style.display = 'none';
+			if (amIBroadcaster) btnMic.style.display = 'inline-block'; else btnMic.style.display = 'none';
 
 			document.getElementById('voicha_live_modal').style.display = 'flex';
 			document.getElementById('voicha_live_status').innerText = '接続の準備中...';
@@ -528,18 +557,18 @@
 				const ths = getThreads(); const th = ths.find(t => t.id == currentThreadId);
 				if (th && th.voicha && th.voicha.limit) limit = th.voicha.limit;
 
-				if (isBroadcaster && limit) {
+				if (amIBroadcaster && limit) {
 					const snap = await getDocs_ref(usersRef);
 					let activeBroadcasters = 0;
 					snap.forEach(d => { if(d.data().isBroadcaster) activeBroadcasters++; });
 					if (activeBroadcasters >= limit) {
 						alert(`配信枠（上限${limit}人）が満員です。\n視聴モードで参加します。`);
-						isBroadcaster = false;
+						amIBroadcaster = false;
 						btnMic.style.display = 'none';
 					}
 				}
 
-				if (isBroadcaster) {
+				if (amIBroadcaster) {
 					liveStreamWebRTC = await navigator.mediaDevices.getUserMedia({ audio: true });
 					liveAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
 					let source = liveAudioCtx.createMediaStreamSource(liveStreamWebRTC);
@@ -557,6 +586,18 @@
 					document.getElementById('voicha_live_icon').innerText = '🎙️';
 					document.getElementById('voicha_live_role').innerText = '配信中';
 					document.getElementById('voicha_mic_bar').style.display = 'block';
+					
+					// ★ 配信者として参加成功したら、ステータスを「live」に更新
+					let currentData = await getDoc_ref(doc_ref(db, "bbs_data", currentBoard));
+					if (currentData.exists()) {
+						let tList = JSON.parse(currentData.data().data || "[]");
+						let tIdx = tList.findIndex(t => t.id == currentThreadId);
+						if (tIdx !== -1 && tList[tIdx].voicha && tList[tIdx].voicha.status !== 'live') {
+							tList[tIdx].voicha.status = 'live';
+							await setDoc_ref(doc_ref(db, "bbs_data", currentBoard), { data: JSON.stringify(tList) });
+						}
+					}
+
 				} else {
 					document.getElementById('voicha_live_status').innerText = '🎧 視聴モードで参加しています';
 					document.getElementById('voicha_live_icon').innerText = '🎧';
@@ -595,14 +636,14 @@
 				});
 				voichaUnsubscribes.push(unsubUsers);
 				
-				await setDoc_ref(doc_ref(usersRef, myVoichaUid), { active: true, time: Date.now(), isBroadcaster: isBroadcaster });
+				await setDoc_ref(doc_ref(usersRef, myVoichaUid), { active: true, time: Date.now(), isBroadcaster: amIBroadcaster });
 				
 			} catch(e) {
-				document.getElementById('voicha_live_status').innerText = '⚠️ エラー：マイクへのアクセスが拒否されました。視聴モードで参加します。';
+				document.getElementById('voicha_live_status').innerText = '⚠️ エラー：マイクの許可がありません。視聴モードで参加します。';
 				document.getElementById('voicha_live_icon').innerText = '🎧';
 				document.getElementById('voicha_live_role').innerText = '視聴中';
 				document.getElementById('voicha_mic_bar').style.display = 'none';
-				isBroadcaster = false;
+				amIBroadcaster = false;
 				btnMic.style.display = 'none';
 				await setDoc_ref(doc_ref(usersRef, myVoichaUid), { active: true, time: Date.now(), isBroadcaster: false });
 			}
@@ -669,7 +710,38 @@
 		}
 
 		async function leaveVoicha() {
-			if(myVoichaUid) { try { const usersRef = collection_ref(db, 'voicha_users', currentThreadId, 'participants'); await deleteDoc_ref(doc_ref(usersRef, myVoichaUid)); } catch(e){} }
+			if(myVoichaUid) { 
+				// ★自分が配信者だった場合、他の配信者が残っているか確認する
+				if (amIBroadcaster) {
+					const usersRef = collection_ref(db, 'voicha_users', currentThreadId, 'participants');
+					const snap = await getDocs_ref(usersRef);
+					let otherBroadcasters = 0;
+					snap.forEach(d => {
+						if (d.id !== myVoichaUid && d.data().isBroadcaster) {
+							otherBroadcasters++;
+						}
+					});
+					
+					// 自分以外の配信者が0人なら「配信求む！」にステータスを戻す
+					if (otherBroadcasters === 0) {
+						let currentData = await getDoc_ref(doc_ref(db, "bbs_data", currentBoard));
+						if (currentData.exists()) {
+							let tList = JSON.parse(currentData.data().data || "[]");
+							let tIdx = tList.findIndex(t => t.id == currentThreadId);
+							if (tIdx !== -1 && tList[tIdx].voicha) {
+								tList[tIdx].voicha.status = 'waiting';
+								await setDoc_ref(doc_ref(db, "bbs_data", currentBoard), { data: JSON.stringify(tList) });
+							}
+						}
+					}
+				}
+
+				try { 
+					const usersRef = collection_ref(db, 'voicha_users', currentThreadId, 'participants'); 
+					await deleteDoc_ref(doc_ref(usersRef, myVoichaUid)); 
+				} catch(e){} 
+			}
+			
 			voichaUnsubscribes.forEach(unsub => unsub()); voichaUnsubscribes = [];
 			Object.keys(peerConnections).forEach(uid => {
 				peerConnections[uid].close(); let el = document.getElementById('audio_webrtc_' + uid); if(el) el.remove();
@@ -680,7 +752,7 @@
 			if(liveAudioCtx) liveAudioCtx.close();
 			document.getElementById('voicha_live_modal').style.display = 'none';
 			document.getElementById('voicha_mic_level').style.width = '0%';
-			myVoichaUid = null; liveStreamWebRTC = null;
+			myVoichaUid = null; liveStreamWebRTC = null; amIBroadcaster = false;
 		}
 
 		/* --- その他モーダル群 --- */
@@ -711,22 +783,11 @@
 			document.getElementById('voice_record_btn').disabled = false; document.getElementById('voice_stop_btn').disabled = true;
 			document.getElementById('voice_update_btn').disabled = true; document.getElementById('voice_save_btn').disabled = true; origVoice=null; 
 		}
-		
-		// ★ バグ修正：録音キャンセル処理
 		function closeVoiceModal() { 
-			if(mediaRec && mediaRec.state !== 'inactive') {
-				mediaRec.onstop = null; // 裏で音声加工が走らないようにイベントを解除
-				mediaRec.stop(); 
-			}
-			if(mStream) {
-				mStream.getTracks().forEach(t => t.stop()); // マイクを確実に解放
-				mStream = null;
-			}
-			origVoice = null;
-			document.getElementById('voice_preview').src = '';
-			document.getElementById('voice_modal').style.display='none'; 
+			if(mediaRec && mediaRec.state !== 'inactive') { mediaRec.onstop = null; mediaRec.stop(); }
+			if(mStream) { mStream.getTracks().forEach(t => t.stop()); mStream = null; }
+			origVoice = null; document.getElementById('voice_preview').src = ''; document.getElementById('voice_modal').style.display='none'; 
 		}
-		
 		async function startVoiceRecord() {
 			document.getElementById('voice_record_btn').disabled = true; document.getElementById('voice_stop_btn').disabled = false;
 			document.getElementById('voice_update_btn').disabled = true; document.getElementById('voice_save_btn').disabled = true;

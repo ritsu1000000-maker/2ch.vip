@@ -30,7 +30,12 @@
 		.thread_list li::before { content: "▶"; position: absolute; left: 8px; color: #aaa; font-size: 10px; } .thread_list a { font-weight: bold; font-size: 15px; }
 		.create-form input[type="text"], .create-form textarea, .create-form input[type="file"] { border: 1px solid #aaa; padding: 6px; margin-top: 4px; font-size: 13px; }
 		.create-form textarea { width: 100%; height: 120px; } .btn-primary { background-color: #f0f0f0; border: 1px solid #888; padding: 6px 15px; cursor: pointer; font-weight: bold; }
-		.ch2-wrapper { background-color: #FFFFFF; padding: 15px 25px; border: 1px solid #ccc; } .ch2-title { color: #ff0000; font-size: 20px; font-weight: bold; margin: 15px 0; }
+		
+		/* スレ内用スタイル */
+		.ch2-wrapper { background-color: #FFFFFF; padding: 15px 25px; border: 1px solid #ccc; } 
+		.ch2-nav { font-size: 13px; margin-bottom: 15px; } .ch2-nav a { margin-right: 8px; }
+		.ch2-search { margin-bottom: 15px; font-size: 13px; } .ch2-search input { border: 1px solid #aaa; padding: 2px 4px; font-family: inherit; }
+		.ch2-title { color: #ff0000; font-size: 20px; font-weight: bold; margin: 15px 0; }
 		.ch2-post { margin-bottom: 22px; } .ch2-header { font-size: 14px; color: #333; margin-bottom: 8px; } .ch2-name { color: #008000; font-weight: bold; }
 		.ch2-name::before { content: "◆ "; color: #999; font-size: 11px; } .ch2-body { margin-left: 2.5em; font-size: 15px; line-height: 1.6; word-wrap: break-word; }
 		.ch2-post-image { max-width: 300px; display: block; margin: 10px 0; border: 1px solid #ccc; cursor: pointer;} .ch2-owner-mark { color: #ff0000; font-weight: bold; margin-left: 2px; }
@@ -88,7 +93,7 @@
 				<p class="title" id="board_name_display">読み込み中...</p>
 				<div style="display:flex; justify-content:space-between; align-items:flex-end;">
 					<span style="font-size: 13px;"><a href="#create_thread_area" style="font-weight:bold; color:#0056b3; margin-right:10px;">[スレ立て]</a>スレッド一覧です。</span>
-					<div><a href="#" onclick="openApiSettings(); return false;" style="font-size: 12px; color: #0056b3; margin-right: 15px; font-weight:bold;">⚙️ API設定</a><a href="#" onclick="clearBbs(); return false;" style="font-size: 12px; color: #CC0000;"></a></div>
+					<div><a href="#" onclick="openApiSettings(); return false;" style="font-size: 12px; color: #0056b3; margin-right: 15px; font-weight:bold;">⚙️ API設定</a><a href="#" onclick="clearBbs(); return false;" style="font-size: 12px; color: #CC0000;">全データを初期化</a></div>
 				</div>
 			</div></div>
 		</div>
@@ -273,7 +278,13 @@
 				document.getElementById('board_header_area').style.display = 'none'; document.getElementById('create_thread_area').style.display = 'none';
 				
 				let wf = th.voicha ? '📶 ' : '';
-				let html = `<div class="ch2-wrapper"><div class="ch2-nav"><a href="?board=${currentBoard}">[板に戻る]</a><a href="#">全部</a> <a href="#">最新50</a></div><hr><div class="ch2-title">${wf}${escapeHtml(th.title)} (${th.posts.length})</div>`;
+				
+				// ★ ここに「画像一覧」などの検索バーUIを復活！
+				let html = `<div class="ch2-wrapper">
+					<div class="ch2-nav"><a href="?board=${currentBoard}">[板に戻る]</a><a href="#">全部</a> <a href="#">最新50</a> <a href="#">まとめる</a> | <a href="#">設定</a> | <a href="#">履歴</a><br>前 次 <a href="#">1-</a></div>
+					<div class="ch2-search"><a href="#" onclick="showImageGallery(); return false;" style="font-weight:bold;">画像一覧</a>　<input type="text" placeholder="キーワード入力" size="20"><button style="font-size:12px; padding:1px 6px;">スレ内検索</button></div>
+					<hr style="border:0; border-top:1px solid #ccc; margin:10px 0;">
+					<div class="ch2-title">${wf}${escapeHtml(th.title)} (${th.posts.length})</div>`;
 				
 				if (th.voicha) {
 					let vtext = '';
@@ -306,7 +317,7 @@
 					<div class="form-row"><input type="file" id="reply_file" accept="image/*" style="width:150px;"><button type="button" class="btn-oekaki-toggle" onclick="openOekakiModal('reply')">🎨 お絵描き</button><button type="button" class="btn-voice-toggle" onclick="openVoiceModal('reply')">🎤 ボイス</button></div>
 					<div id="oekaki_status_reply" class="status-indicator">※お絵描きセット済</div><div id="voice_status_reply" class="status-indicator">※ボイスセット済</div><div id="map_status_reply" class="status-indicator">※地図セット済</div>
 					<textarea id="reply_msg" placeholder="本文を入力... (例: !voicha:4, !aku:レス番号)"></textarea>
-					<div class="form-toolbar"><button type="button" class="tool-btn tool-img" onclick="showImageGallery()"></button><button type="button" class="tool-btn tool-pin" onclick="openMapModal('reply')"></button><button type="submit" class="ch2-submit"></button></div>
+					<div class="form-toolbar"><button type="button" class="tool-btn tool-pin" onclick="openMapModal('reply')"></button><button type="submit" class="ch2-submit"></button></div>
 				</form></div></div>`;
 				ca.innerHTML = html;
 
@@ -619,7 +630,7 @@
 		}
 		function saveVoiceData() { voiceDataUrl = document.getElementById('voice_preview').dataset.tmp; closeVoiceModal(); document.getElementById(activeFormMode==='create'?'voice_status_create':'voice_status_reply').style.display='block'; }
 
-		// ★画像一覧ギャラリーを復活
+		// ★ 画像ギャラリーを復活（JS関数）
 		function showImageGallery() {
 			const ths = getThreads(); const th = ths.find(t => t.id == currentThreadId); if (!th) return;
 			const gc = document.getElementById('gallery_content'); gc.innerHTML = ''; let hI = false;

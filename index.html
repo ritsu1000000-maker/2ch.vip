@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>個人用マルチ掲示板（配信求む！機能追加版）</title>
+	<title>個人用マルチ掲示板（コマンド入力補助・マップ修正版）</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<style>
@@ -31,6 +31,11 @@
 		.create-form input[type="text"], .create-form textarea, .create-form input[type="file"] { border: 1px solid #aaa; padding: 6px; margin-top: 4px; font-size: 13px; }
 		.create-form textarea { width: 100%; height: 120px; } .btn-primary { background-color: #f0f0f0; border: 1px solid #888; padding: 6px 15px; cursor: pointer; font-weight: bold; }
 		
+		/* コマンドバー */
+		.command-bar { margin: 8px 0; display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+		.cmd-btn { background: #e8f4f8; border: 1px solid #b3d4e0; color: #0056b3; font-size: 11px; padding: 4px 8px; cursor: pointer; border-radius: 2px; font-weight: bold; }
+		.cmd-btn:hover { background: #d0e9f2; }
+
 		/* スレ内用スタイル */
 		.ch2-wrapper { background-color: #FFFFFF; padding: 15px 25px; border: 1px solid #ccc; } 
 		.ch2-nav { font-size: 13px; margin-bottom: 15px; } .ch2-nav a { margin-right: 8px; }
@@ -48,7 +53,6 @@
 		.tool-btn { background: #f8f8f8; border: 1px solid #aaa; padding: 4px 12px; cursor: pointer; border-radius: 2px; color: #555; font-size: 13px; font-weight: normal;}
 		.tool-btn:hover { background: #e8e8e8; }
 		.tool-btn.active { background: #e0e0e0; border-color: #777; box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); }
-		.tool-img::before { content: "画像"; } .tool-pin::before { content: "位置"; } .tool-msg::before { content: "Aa"; } .tool-pen::before { content: "描画"; }
 		.ch2-submit { flex-grow: 1; font-weight: bold; font-size: 15px; padding: 6px; cursor: pointer; } .ch2-submit::before { content: "■ 投稿する"; }
 		
 		/* モーダル群 */
@@ -115,7 +119,17 @@
 						<div><label>添付：</label><br><div style="display:flex; gap:5px;"><input type="file" id="bbs_file" accept="image/*" /><button type="button" class="btn-oekaki-toggle" onclick="openOekakiModal('create')">🎨 お絵描き</button><button type="button" class="btn-voice-toggle" onclick="openVoiceModal('create')">🎤 ボイス</button><button type="button" class="btn-map-toggle" onclick="openMapModal('create')">📍 地図</button></div>
 						<div id="oekaki_status_create" class="status-indicator">※お絵描きセット済</div><div id="voice_status_create" class="status-indicator" style="color:#0000ff;">※ボイスセット済</div><div id="map_status_create" class="status-indicator" style="color:#ff8c00;">※地図セット済</div></div>
 					</div>
-					<div style="margin-bottom: 10px;"><textarea id="bbs_msg" placeholder="本文を入力... (例: !voicha:4, !aku:レス番号, !kuji)"></textarea></div>
+					
+					<div class="command-bar">
+						<span style="font-size:11px; color:#666;">コマンド：</span>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_msg', '!voicha')">📶ぬとらじ</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_msg', '!voicha:4')">📶ぬとらじ(4人)</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_msg', '!voicha:1')">📶ひとらじ</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_msg', '!kuji')">🎲おみくじ</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_msg', '!dama')">🧧お年玉</button>
+					</div>
+
+					<div style="margin-bottom: 10px;"><textarea id="bbs_msg" placeholder="本文を入力..."></textarea></div>
 					<div><input class="btn-primary" type="submit" value="■ 新規スレッドを作成する"></div>
 				</form>
 			</div>
@@ -207,9 +221,8 @@
 
 		let isMicMuted = false;
 		let isSpeakerMuted = false;
-		let amIBroadcaster = false; // 自分が配信者かどうかを保持
+		let amIBroadcaster = false; 
 
-		// Firebase用グローバル変数
 		let db, doc_ref, setDoc_ref, onSnapshot_ref, collection_ref, addDoc_ref, deleteDoc_ref, query_ref, where_ref, getDocs_ref, getDoc_ref;
 		let allBoardsCache = { 'main': [], 'game': [], 'music': [], 'memo': [] };
 		let cachedThreads = [];
@@ -278,6 +291,15 @@
 		function closeApiSettings() { document.getElementById('api_settings_modal').style.display = 'none'; }
 		function saveApiSettings() { const k = document.getElementById('api_key_input').value.trim(); if(k) localStorage.setItem('my_ai_api_key', k); else localStorage.removeItem('my_ai_api_key'); closeApiSettings(); }
 
+		// ★ コマンド入力補助
+		function insertCommandTo(targetId, cmd) {
+			const el = document.getElementById(targetId);
+			if (el) {
+				el.value += (el.value.length > 0 && !el.value.endsWith('\n') ? '\n' : '') + cmd;
+				el.focus();
+			}
+		}
+
 		// ==========================================
 		// UI描画処理
 		// ==========================================
@@ -296,7 +318,6 @@
 				const d = p.time.split(' ');
 				const t = (new Date().getFullYear().toString().slice(-2) + '/' + ('0'+(new Date().getMonth()+1)).slice(-2) + '/' + ('0'+new Date().getDate()).slice(-2) === d[0].substring(0,8)) ? d[1] : d[0].substring(0,8);
 				
-				// ★ 配信マークの切り替え処理
 				let wf = '';
 				if (p.v) {
 					if (p.v.status === 'waiting') wf = '🙇‍♂️配信求む！ ';
@@ -332,7 +353,6 @@
 					<hr style="border:0; border-top:1px solid #ccc; margin:10px 0;">
 					<div class="ch2-title">${wf}${escapeHtml(th.title)} (${th.posts.length})</div>`;
 				
-				// ★ 生配信バナーの表示切り替え
 				if (th.voicha) {
 					let vtext = '';
 					let isWaiting = th.voicha.status === 'waiting';
@@ -375,8 +395,18 @@
 					<div class="form-row"><input type="text" id="reply_name" placeholder="名無しさん" style="width:110px;"><input type="text" id="reply_email" value="sage" style="width:90px;"><label><input type="checkbox" id="hide_owner_cb" onchange="toggleOwnerPosts()" ${cbChecked}>主非表示</label></div>
 					<div class="form-row"><input type="file" id="reply_file" accept="image/*" style="width:150px;"><button type="button" class="btn-oekaki-toggle" onclick="openOekakiModal('reply')">🎨 お絵描き</button><button type="button" class="btn-voice-toggle" onclick="openVoiceModal('reply')">🎤 ボイス</button></div>
 					<div id="oekaki_status_reply" class="status-indicator">※お絵描きセット済</div><div id="voice_status_reply" class="status-indicator">※ボイスセット済</div><div id="map_status_reply" class="status-indicator">※地図セット済</div>
-					<textarea id="reply_msg" placeholder="本文を入力... (例: !voicha:4, !aku:レス番号)"></textarea>
-					<div class="form-toolbar"><button type="button" class="tool-btn tool-img" onclick="showImageGallery()"></button><button type="button" class="tool-btn tool-pin" onclick="openMapModal('reply')"></button><button type="submit" class="ch2-submit"></button></div>
+					
+					<div class="command-bar">
+						<span style="font-size:11px; color:#666;">コマンド：</span>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('reply_msg', '!voicha')">📶ぬとらじ</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('reply_msg', '!voicha:4')">📶ぬとらじ(4人)</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('reply_msg', '!voicha:1')">📶ひとらじ</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('reply_msg', '!kuji')">🎲おみくじ</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('reply_msg', '!dama')">🧧お年玉</button>
+					</div>
+
+					<textarea id="reply_msg" placeholder="本文を入力..."></textarea>
+					<div class="form-toolbar"><button type="button" class="tool-btn tool-img" onclick="showImageGallery()"></button><button type="button" class="tool-btn" onclick="openMapModal('reply')">📍 地図</button><button type="submit" class="ch2-submit"></button></div>
 				</form></div></div>`;
 				ca.innerHTML = html;
 
@@ -457,7 +487,6 @@
 			let newVoicha = null; let isVoichaTriggered = false;
 			if (voichaMatch) {
 				isVoichaTriggered = true; let limit = voichaMatch[1] ? parseInt(voichaMatch[1]) : null; 
-				// ★コマンド起動時は「waiting」にする
 				newVoicha = { limit: limit, status: 'waiting' };
 				parsedMsg = parsedMsg.replace(/!voicha(?::(\d+))?/g, (match, p1) => { let txt = p1 ? (p1 === '1' ? 'ひとらじ起動' : `ぬとらじ起動（上限${p1}人）`) : 'ぬとらじ起動'; return `${match}<br><span style="color:#ff8c00; font-weight:bold;">★${txt}</span>`; });
 			}
@@ -535,7 +564,7 @@
 		}
 
 		async function joinVoicha(isBroadcaster) {
-			amIBroadcaster = isBroadcaster; // ★グローバルに保持
+			amIBroadcaster = isBroadcaster;
 			isMicMuted = false; isSpeakerMuted = false;
 			const btnMic = document.getElementById('btn_mute_mic');
 			btnMic.innerText = '🎤 マイク ON'; btnMic.style.background = '#f0f0f0'; btnMic.style.color = '#333';
@@ -587,7 +616,6 @@
 					document.getElementById('voicha_live_role').innerText = '配信中';
 					document.getElementById('voicha_mic_bar').style.display = 'block';
 					
-					// ★ 配信者として参加成功したら、ステータスを「live」に更新
 					let currentData = await getDoc_ref(doc_ref(db, "bbs_data", currentBoard));
 					if (currentData.exists()) {
 						let tList = JSON.parse(currentData.data().data || "[]");
@@ -711,7 +739,6 @@
 
 		async function leaveVoicha() {
 			if(myVoichaUid) { 
-				// ★自分が配信者だった場合、他の配信者が残っているか確認する
 				if (amIBroadcaster) {
 					const usersRef = collection_ref(db, 'voicha_users', currentThreadId, 'participants');
 					const snap = await getDocs_ref(usersRef);
@@ -722,7 +749,6 @@
 						}
 					});
 					
-					// 自分以外の配信者が0人なら「配信求む！」にステータスを戻す
 					if (otherBroadcasters === 0) {
 						let currentData = await getDoc_ref(doc_ref(db, "bbs_data", currentBoard));
 						if (currentData.exists()) {
@@ -756,7 +782,19 @@
 		}
 
 		/* --- その他モーダル群 --- */
-		function openMapModal(mode) { activeFormMode = mode; document.getElementById('map_modal').style.display = 'flex'; if (!leafletMap) { leafletMap = L.map('map_picker').setView([35.681, 139.767], 13); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(leafletMap); leafletMap.on('click', e => { if (mapMarker) leafletMap.removeLayer(mapMarker); mapMarker = L.marker(e.latlng).addTo(leafletMap); }); } setTimeout(() => { leafletMap.invalidateSize(); }, 200); }
+		function openMapModal(mode) { 
+			activeFormMode = mode; 
+			document.getElementById('map_modal').style.display = 'flex'; 
+			if (!leafletMap) { 
+				leafletMap = L.map('map_picker').setView([35.681, 139.767], 13); 
+				L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(leafletMap); 
+				leafletMap.on('click', e => { 
+					if (mapMarker) leafletMap.removeLayer(mapMarker); 
+					mapMarker = L.marker(e.latlng).addTo(leafletMap); 
+				}); 
+			} 
+			setTimeout(() => { leafletMap.invalidateSize(); }, 300); // タイミング調整
+		}
 		function closeMapModal() { document.getElementById('map_modal').style.display = 'none'; }
 		function saveMapData() { if (!mapMarker) return; const l = mapMarker.getLatLng(); mapDataInfo = { lat: l.lat, lng: l.lng }; closeMapModal(); document.getElementById(activeFormMode === 'create' ? 'map_status_create' : 'map_status_reply').style.display = 'block'; }
 		function getCurrentLocation() { if(navigator.geolocation) { navigator.geolocation.getCurrentPosition(p => { leafletMap.setView([p.coords.latitude, p.coords.longitude], 15); if(mapMarker) leafletMap.removeLayer(mapMarker); mapMarker = L.marker([p.coords.latitude, p.coords.longitude]).addTo(leafletMap); }); } }
@@ -777,7 +815,6 @@
 		function saveOekakiCanvas() { oekakiDataUrl = canvas.toDataURL('image/png'); closeOekakiModal(); document.getElementById(activeFormMode === 'create' ? 'oekaki_status_create' : 'oekaki_status_reply').style.display = 'block'; }
 		function applyAIFilter() { const tc=document.createElement('canvas'); tc.width=canvas.width; tc.height=canvas.height; tc.getContext('2d').drawImage(canvas,0,0); ctx.filter='contrast(1.5) saturate(1.2) blur(0.5px)'; ctx.drawImage(tc,0,0); ctx.filter='none'; }
 
-		let mediaRec, aChunks = [], mStream, origVoice = null;
 		function openVoiceModal(mode) {
 			activeFormMode = mode; document.getElementById('voice_modal').style.display = 'flex'; document.getElementById('voice_preview').style.display = 'none'; document.getElementById('voice_status').innerText="待機中...";
 			document.getElementById('voice_record_btn').disabled = false; document.getElementById('voice_stop_btn').disabled = true;

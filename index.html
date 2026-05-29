@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>個人用マルチ掲示板（WebRTC 生配信・完全版）</title>
+	<title>個人用マルチ掲示板（WebRTC 生配信・画像一覧 完全版）</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<style>
@@ -60,6 +60,15 @@
 		.live-user-icon { width: 50px; height: 50px; background: #e0e0e0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; margin: 0 auto; border: 3px solid #28a745; }
 		.live-mic-bar { width: 100%; height: 6px; background: #ccc; margin-top: 8px; border-radius: 3px; overflow: hidden; }
 		.live-mic-level { height: 100%; width: 0%; background: #28a745; transition: width 0.1s; }
+
+		/* 画像ギャラリー追加 */
+		#image_gallery_modal .modal-header { padding: 15px 25px; text-align: right; background: #222; position: sticky; top: 0; z-index: 1001; border-bottom: 1px solid #444; width: 100%; box-sizing: border-box; }
+		.modal-close { color: #fff; font-size: 16px; text-decoration: none; font-weight: bold; cursor: pointer; background: #444; padding: 5px 15px; border-radius: 4px; }
+		.modal-close:hover { background: #666; }
+		#image_gallery_modal .modal-content { padding: 20px; display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; width: 100%; }
+		.gallery-item { text-align: center; color: #ddd; font-size: 13px; font-weight: bold; }
+		.gallery-item img { max-width: 200px; max-height: 200px; object-fit: cover; border: 3px solid #fff; cursor: pointer; transition: transform 0.2s; background: #fff; }
+		.gallery-item img:hover { transform: scale(1.05); border-color: #4a90e2; }
 	</style>
 </head>
 <body>
@@ -189,7 +198,6 @@
 				const app = initializeApp(firebaseConfig);
 				db = getFirestore(app);
 				
-				// WebRTC用にも使うため参照を保持
 				doc_ref = doc; setDoc_ref = setDoc; onSnapshot_ref = onSnapshot; 
 				collection_ref = collection; addDoc_ref = addDoc; deleteDoc_ref = deleteDoc;
 				query_ref = query; where_ref = where; getDocs_ref = getDocs;
@@ -204,7 +212,6 @@
 							if (!justPosted) renderScreen();
 							else justPosted = false; 
 						}
-						
 						if (!currentThreadId) { document.getElementById('vertical_headline_area').style.display = 'block'; initHeadline(); }
 					});
 				});
@@ -221,10 +228,8 @@
 
 		async function clearBbs() { 
 			if (confirm('この板のデータをすべて削除しますか？')) { 
-				try {
-					await setDoc_ref(doc_ref(db, "bbs_data", currentBoard), { data: "[]" });
-					window.location.href = '?board=' + currentBoard; 
-				} catch(e) { alert("削除に失敗しました。"); }
+				try { await setDoc_ref(doc_ref(db, "bbs_data", currentBoard), { data: "[]" }); window.location.href = '?board=' + currentBoard; } 
+				catch(e) { alert("削除に失敗しました。"); }
 			} 
 		}
 
@@ -301,7 +306,7 @@
 					<div class="form-row"><input type="file" id="reply_file" accept="image/*" style="width:150px;"><button type="button" class="btn-oekaki-toggle" onclick="openOekakiModal('reply')">🎨 お絵描き</button><button type="button" class="btn-voice-toggle" onclick="openVoiceModal('reply')">🎤 ボイス</button></div>
 					<div id="oekaki_status_reply" class="status-indicator">※お絵描きセット済</div><div id="voice_status_reply" class="status-indicator">※ボイスセット済</div><div id="map_status_reply" class="status-indicator">※地図セット済</div>
 					<textarea id="reply_msg" placeholder="本文を入力... (例: !voicha:4, !aku:レス番号)"></textarea>
-					<div class="form-toolbar"><button type="button" class="tool-btn tool-pin" onclick="openMapModal('reply')"></button><button type="submit" class="ch2-submit"></button></div>
+					<div class="form-toolbar"><button type="button" class="tool-btn tool-img" onclick="showImageGallery()"></button><button type="button" class="tool-btn tool-pin" onclick="openMapModal('reply')"></button><button type="submit" class="ch2-submit"></button></div>
 				</form></div></div>`;
 				ca.innerHTML = html;
 
@@ -397,19 +402,13 @@
 		function getDailyId() { const t = new Date().toDateString(); let sd = localStorage.getItem('id_date'), sid = localStorage.getItem('daily_id'); if (sd !== t || !sid) { sid = Math.random().toString(36).substring(2, 10).toLowerCase() + '0'; localStorage.setItem('id_date', t); localStorage.setItem('daily_id', sid); } return sid; }
 		function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
 
-
 		// ==========================================
 		// WebRTC 生配信（P2Pフルメッシュ通信）
 		// ==========================================
-		let myVoichaUid = null;
-		let voichaUnsubscribes = [];
-		let peerConnections = {};
-		let liveStreamWebRTC = null;
-		let liveAudioCtx, liveAnalyser, liveMicInterval;
+		let myVoichaUid = null; let voichaUnsubscribes = []; let peerConnections = {}; let liveStreamWebRTC = null; let liveAudioCtx, liveAnalyser, liveMicInterval;
 
 		async function joinVoicha() {
 			let isBroadcaster = confirm("マイクをオンにして生配信に参加（配信）しますか？\n（「キャンセル」を押すとマイクがオフになり、視聴のみになります）");
-			
 			document.getElementById('voicha_live_modal').style.display = 'flex';
 			document.getElementById('voicha_live_status').innerText = '接続の準備中...';
 			
@@ -418,10 +417,8 @@
 			const signalsRef = collection_ref(db, 'voicha_signals');
 			
 			try {
-				// 人数制限のチェック
 				let limit = null;
-				const ths = getThreads();
-				const th = ths.find(t => t.id == currentThreadId);
+				const ths = getThreads(); const th = ths.find(t => t.id == currentThreadId);
 				if (th && th.voicha && th.voicha.limit) limit = th.voicha.limit;
 
 				if (isBroadcaster && limit) {
@@ -436,7 +433,6 @@
 
 				if (isBroadcaster) {
 					liveStreamWebRTC = await navigator.mediaDevices.getUserMedia({ audio: true });
-					// マイクレベルのアニメーション設定
 					liveAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
 					let source = liveAudioCtx.createMediaStreamSource(liveStreamWebRTC);
 					liveAnalyser = liveAudioCtx.createAnalyser();
@@ -454,31 +450,24 @@
 					document.getElementById('voicha_live_status').innerText = '🎧 視聴モードで参加しています';
 				}
 				
-				// 1. 自分宛てのシグナルを監視
 				const q = query_ref(signalsRef, where_ref("to", "==", myVoichaUid), where_ref("thread", "==", currentThreadId));
 				let unsubSignals = onSnapshot_ref(q, snap => {
 					snap.docChanges().forEach(async change => {
 						if(change.type === 'added') {
 							const msg = change.doc.data();
 							await handleVoichaSignal(msg.from, msg.data);
-							// 受信したシグナルは処理後に削除（DB肥大化防止）
 							try { deleteDoc_ref(change.doc.ref); } catch(e){}
 						}
 					});
 				});
 				voichaUnsubscribes.push(unsubSignals);
 				
-				// 2. 部屋の入退室を監視
 				let unsubUsers = onSnapshot_ref(usersRef, snap => {
 					snap.docChanges().forEach(change => {
 						const peerUid = change.doc.id;
 						if(peerUid === myVoichaUid) return;
-						
 						if(change.type === 'added') {
-							// ユーザーIDを比較して、片方だけがOfferを投げるようにする（衝突防止）
-							if(myVoichaUid > peerUid) {
-								startVoichaCall(peerUid);
-							}
+							if(myVoichaUid > peerUid) startVoichaCall(peerUid);
 						}
 						if(change.type === 'removed') {
 							if(peerConnections[peerUid]) {
@@ -492,28 +481,18 @@
 				});
 				voichaUnsubscribes.push(unsubUsers);
 				
-				// 3. 自分を部屋の参加者リストに追加
 				await setDoc_ref(doc_ref(usersRef, myVoichaUid), { active: true, time: Date.now(), isBroadcaster: isBroadcaster });
 				
 			} catch(e) {
 				document.getElementById('voicha_live_status').innerText = '⚠️ エラー：マイクへのアクセスが拒否されました。';
-				console.error(e);
 			}
 		}
 
 		function getPeerConnection(peerUid) {
 			if(peerConnections[peerUid]) return peerConnections[peerUid];
-			
-			// Googleの無料STUNサーバーを利用
 			const pc = new RTCPeerConnection({ iceServers: [{urls: 'stun:stun.l.google.com:19302'}] });
 			peerConnections[peerUid] = pc;
-			
-			// 自分のマイク音声を相手に送る
-			if(liveStreamWebRTC) {
-				liveStreamWebRTC.getTracks().forEach(track => pc.addTrack(track, liveStreamWebRTC));
-			}
-			
-			// 相手の音声を受け取って再生する
+			if(liveStreamWebRTC) liveStreamWebRTC.getTracks().forEach(track => pc.addTrack(track, liveStreamWebRTC));
 			pc.ontrack = event => {
 				let audioEl = document.getElementById('audio_webrtc_' + peerUid);
 				if(!audioEl) {
@@ -524,22 +503,14 @@
 				}
 				audioEl.srcObject = event.streams[0];
 			};
-			
-			// 通信経路を探す（ICE Candidate）
 			pc.onicecandidate = event => {
-				if(event.candidate) {
-					sendVoichaSignal(peerUid, { type: 'ice', candidate: event.candidate.toJSON() });
-				}
+				if(event.candidate) sendVoichaSignal(peerUid, { type: 'ice', candidate: event.candidate.toJSON() });
 			};
 			return pc;
 		}
 
 		async function sendVoichaSignal(toUid, data) {
-			try {
-				await addDoc_ref(collection_ref(db, 'voicha_signals'), {
-					thread: currentThreadId, from: myVoichaUid, to: toUid, data: data, timestamp: Date.now()
-				});
-			} catch(e) {}
+			try { await addDoc_ref(collection_ref(db, 'voicha_signals'), { thread: currentThreadId, from: myVoichaUid, to: toUid, data: data, timestamp: Date.now() }); } catch(e) {}
 		}
 
 		async function startVoichaCall(peerUid) {
@@ -572,32 +543,27 @@
 			}
 			voichaUnsubscribes.forEach(unsub => unsub());
 			voichaUnsubscribes = [];
-			
 			Object.keys(peerConnections).forEach(uid => {
 				peerConnections[uid].close();
 				let el = document.getElementById('audio_webrtc_' + uid);
 				if(el) el.remove();
 			});
 			peerConnections = {};
-			
 			if(liveMicInterval) clearInterval(liveMicInterval);
 			if(liveStreamWebRTC) liveStreamWebRTC.getTracks().forEach(t => t.stop());
 			if(liveAudioCtx) liveAudioCtx.close();
-			
 			document.getElementById('voicha_live_modal').style.display = 'none';
 			document.getElementById('voicha_mic_level').style.width = '0%';
 			myVoichaUid = null;
 			liveStreamWebRTC = null;
 		}
 
-		/* --- 各種モーダル機能（地図・お絵描き・録音） --- */
-		let leafletMap = null; let mapMarker = null;
+		/* --- その他モーダル群 --- */
 		function openMapModal(mode) { activeFormMode = mode; document.getElementById('map_modal').style.display = 'flex'; if (!leafletMap) { leafletMap = L.map('map_picker').setView([35.681, 139.767], 13); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(leafletMap); leafletMap.on('click', e => { if (mapMarker) leafletMap.removeLayer(mapMarker); mapMarker = L.marker(e.latlng).addTo(leafletMap); }); } setTimeout(() => { leafletMap.invalidateSize(); }, 200); }
 		function closeMapModal() { document.getElementById('map_modal').style.display = 'none'; }
 		function saveMapData() { if (!mapMarker) return; const l = mapMarker.getLatLng(); mapDataInfo = { lat: l.lat, lng: l.lng }; closeMapModal(); document.getElementById(activeFormMode === 'create' ? 'map_status_create' : 'map_status_reply').style.display = 'block'; }
 		function getCurrentLocation() { if(navigator.geolocation) { navigator.geolocation.getCurrentPosition(p => { leafletMap.setView([p.coords.latitude, p.coords.longitude], 15); if(mapMarker) leafletMap.removeLayer(mapMarker); mapMarker = L.marker([p.coords.latitude, p.coords.longitude]).addTo(leafletMap); }); } }
 
-		let isDrawing = false; let ctx, canvas;
 		function initOekakiEvents() { canvas = document.getElementById('oekaki_canvas'); ctx = canvas.getContext('2d'); clearOekakiCanvas(); ctx.lineCap = "round"; ctx.lineJoin = "round"; canvas.addEventListener('mousedown', e=>{isDrawing=true; ctx.beginPath(); ctx.moveTo(e.offsetX, e.offsetY);}); canvas.addEventListener('mousemove', e=>{if(isDrawing){ctx.lineTo(e.offsetX, e.offsetY); ctx.stroke();}}); canvas.addEventListener('mouseup', ()=>{isDrawing=false;}); }
 		function setOekakiColor(c, el) { ctx.strokeStyle = c; } function setEraser() { ctx.strokeStyle = '#fff'; } function setOekakiSize(s) { ctx.lineWidth = s; }
 		function clearOekakiCanvas() { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.strokeStyle="#000"; ctx.lineWidth=5;}
@@ -606,7 +572,6 @@
 		function saveOekakiCanvas() { oekakiDataUrl = canvas.toDataURL('image/png'); closeOekakiModal(); document.getElementById(activeFormMode === 'create' ? 'oekaki_status_create' : 'oekaki_status_reply').style.display = 'block'; }
 		function applyAIFilter() { const tc=document.createElement('canvas'); tc.width=canvas.width; tc.height=canvas.height; tc.getContext('2d').drawImage(canvas,0,0); ctx.filter='contrast(1.5) saturate(1.2) blur(0.5px)'; ctx.drawImage(tc,0,0); ctx.filter='none'; }
 
-		let mediaRec, aChunks = [], mStream, origVoice = null;
 		function openVoiceModal(mode) {
 			activeFormMode = mode; document.getElementById('voice_modal').style.display = 'flex'; document.getElementById('voice_preview').style.display = 'none'; document.getElementById('voice_status').innerText="待機中...";
 			document.getElementById('voice_record_btn').disabled = false; document.getElementById('voice_stop_btn').disabled = true;
@@ -653,6 +618,16 @@
 			const c = b.getChannelData(0); for (let i=0; i<b.length; i++) { let s = Math.max(-1, Math.min(1, c[i])); v.setInt16(p, s<0?s*32768:s*32767, true); p+=2; } return new Blob([out], {type:'audio/wav'});
 		}
 		function saveVoiceData() { voiceDataUrl = document.getElementById('voice_preview').dataset.tmp; closeVoiceModal(); document.getElementById(activeFormMode==='create'?'voice_status_create':'voice_status_reply').style.display='block'; }
+
+		// ★画像一覧ギャラリーを復活
+		function showImageGallery() {
+			const ths = getThreads(); const th = ths.find(t => t.id == currentThreadId); if (!th) return;
+			const gc = document.getElementById('gallery_content'); gc.innerHTML = ''; let hI = false;
+			th.posts.forEach((p, i) => { if (p.image) { hI = true; gc.innerHTML += `<div class="gallery-item"><a href="${p.image}" target="_blank"><img src="${p.image}"></a><br>&gt;&gt;${i + 1}</div>`; } });
+			if (!hI) gc.innerHTML = '<div style="color:#fff; font-size:16px; padding:50px;">このスレッドに画像はありません。</div>';
+			document.getElementById('image_gallery_modal').style.display = 'block';
+		}
+		function closeImageGallery() { document.getElementById('image_gallery_modal').style.display = 'none'; }
 	</script>
 </body>
 </html>

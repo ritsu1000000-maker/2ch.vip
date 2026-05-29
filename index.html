@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>個人用マルチ掲示板（WebRTC 通信安定化・完全版）</title>
+	<title>個人用マルチ掲示板（WebRTC ミュート機能追加版）</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<style>
@@ -180,6 +180,12 @@
 					<div class="live-mic-bar" id="voicha_mic_bar"><div id="voicha_mic_level" class="live-mic-level"></div></div>
 				</div>
 			</div>
+			
+			<div style="margin-bottom: 15px; display:flex; justify-content:center; gap:10px;" id="voicha_control_buttons">
+				<button class="modal-btn" id="btn_mute_mic" style="display:none; font-size:12px;" onclick="toggleMic()">🎤 マイク ON</button>
+				<button class="modal-btn" id="btn_mute_speaker" style="font-size:12px;" onclick="toggleSpeaker()">🔈 スピーカー ON</button>
+			</div>
+
 			<div style="font-size:11px; color:#999; margin-bottom:15px; text-align:left;">※この画面を開いている間、バックグラウンドで音声通信が行われます。退出する場合はボタンを押してください。</div>
 			<div><button class="modal-btn" style="background:#dc3545; color:#fff;" onclick="leaveVoicha()">退出する</button></div>
 		</div>
@@ -198,6 +204,10 @@
 
 		let oekakiDataUrl = null, voiceDataUrl = null, mapDataInfo = null, activeFormMode = '', showAllPostsMode = false;
 		let isHideOwnerMode = false; 
+
+		// ミュート状態管理
+		let isMicMuted = false;
+		let isSpeakerMuted = false;
 
 		// Firebase用グローバル変数
 		let db, doc_ref, setDoc_ref, onSnapshot_ref, collection_ref, addDoc_ref, deleteDoc_ref, query_ref, where_ref, getDocs_ref;
@@ -243,7 +253,6 @@
 							if (!justPosted) renderScreen();
 							else justPosted = false; 
 						}
-						
 						if (!currentThreadId) { document.getElementById('vertical_headline_area').style.display = 'block'; initHeadline(); }
 					});
 				});
@@ -305,13 +314,13 @@
 				document.getElementById('board_header_area').style.display = 'none'; document.getElementById('create_thread_area').style.display = 'none';
 				
 				let wf = th.voicha ? '📶 ' : '';
+				
 				let html = `<div class="ch2-wrapper">
 					<div class="ch2-nav"><a href="?board=${currentBoard}">[板に戻る]</a><a href="#">全部</a> <a href="#">最新50</a> <a href="#">まとめる</a> | <a href="#">設定</a> | <a href="#">履歴</a><br>前 次 <a href="#">1-</a></div>
 					<div class="ch2-search"><a href="#" onclick="showImageGallery(); return false;" style="font-weight:bold;">画像一覧</a>　<input type="text" placeholder="キーワード入力" size="20"><button style="font-size:12px; padding:1px 6px;">スレ内検索</button></div>
 					<hr style="border:0; border-top:1px solid #ccc; margin:10px 0;">
 					<div class="ch2-title">${wf}${escapeHtml(th.title)} (${th.posts.length})</div>`;
 				
-				// ★ 生配信バナー（明確なボタンUI）
 				if (th.voicha) {
 					let vtext = '';
 					if (th.voicha.limit === 1) vtext = '※ひとらじ配信中（スレ主のみ）';
@@ -447,15 +456,56 @@
 		function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
 
 		// ==========================================
-		// ★ WebRTC 生配信（通信安定化・バグ修正版）
+		// WebRTC 生配信（ミュート機能付き）
 		// ==========================================
-		let myVoichaUid = null; 
-		let voichaUnsubscribes = []; 
-		let peerConnections = {}; 
-		let liveStreamWebRTC = null; 
-		let liveAudioCtx, liveAnalyser, liveMicInterval;
+		let myVoichaUid = null; let voichaUnsubscribes = []; let peerConnections = {}; let liveStreamWebRTC = null; let liveAudioCtx, liveAnalyser, liveMicInterval;
+
+		// ★ミュート機能用の関数
+		function toggleMic() {
+			if(!liveStreamWebRTC) return;
+			isMicMuted = !isMicMuted;
+			liveStreamWebRTC.getAudioTracks().forEach(t => t.enabled = !isMicMuted);
+			
+			const btn = document.getElementById('btn_mute_mic');
+			if(isMicMuted) {
+				btn.innerText = '🔇 マイク OFF';
+				btn.style.background = '#6c757d';
+				btn.style.color = '#fff';
+			} else {
+				btn.innerText = '🎤 マイク ON';
+				btn.style.background = '#f0f0f0';
+				btn.style.color = '#333';
+			}
+		}
+
+		function toggleSpeaker() {
+			isSpeakerMuted = !isSpeakerMuted;
+			document.querySelectorAll('#voicha_audio_container audio').forEach(a => a.muted = isSpeakerMuted);
+			
+			const btn = document.getElementById('btn_mute_speaker');
+			if(isSpeakerMuted) {
+				btn.innerText = '🔇 スピーカー OFF';
+				btn.style.background = '#6c757d';
+				btn.style.color = '#fff';
+			} else {
+				btn.innerText = '🔈 スピーカー ON';
+				btn.style.background = '#f0f0f0';
+				btn.style.color = '#333';
+			}
+		}
 
 		async function joinVoicha(isBroadcaster) {
+			// ミュート状態とボタンの見た目をリセット
+			isMicMuted = false;
+			isSpeakerMuted = false;
+			const btnMic = document.getElementById('btn_mute_mic');
+			btnMic.innerText = '🎤 マイク ON'; btnMic.style.background = '#f0f0f0'; btnMic.style.color = '#333';
+			const btnSpk = document.getElementById('btn_mute_speaker');
+			btnSpk.innerText = '🔈 スピーカー ON'; btnSpk.style.background = '#f0f0f0'; btnSpk.style.color = '#333';
+			
+			if (isBroadcaster) btnMic.style.display = 'inline-block';
+			else btnMic.style.display = 'none';
+
 			document.getElementById('voicha_live_modal').style.display = 'flex';
 			document.getElementById('voicha_live_status').innerText = '接続の準備中...';
 			
@@ -478,6 +528,7 @@
 					if (activeBroadcasters >= limit) {
 						alert(`配信枠（上限${limit}人）が満員です。\n視聴モードで参加します。`);
 						isBroadcaster = false;
+						btnMic.style.display = 'none'; // マイクボタンを消す
 					}
 				}
 
@@ -545,8 +596,8 @@
 				document.getElementById('voicha_live_role').innerText = '視聴中';
 				document.getElementById('voicha_mic_bar').style.display = 'none';
 				isBroadcaster = false;
+				btnMic.style.display = 'none';
 				
-				// フォールバックで視聴者として登録し直す
 				await setDoc_ref(doc_ref(usersRef, myVoichaUid), { active: true, time: Date.now(), isBroadcaster: false });
 			}
 		}
@@ -554,7 +605,6 @@
 		function getPeerConnection(peerUid) {
 			if(peerConnections[peerUid]) return peerConnections[peerUid];
 			
-			// ★修正: サーバーを複数用意して接続確率を上げる
 			const pc = new RTCPeerConnection({ 
 				iceServers: [
 					{urls: 'stun:stun.l.google.com:19302'},
@@ -563,13 +613,11 @@
 				] 
 			});
 			
-			// ★修正: タイミングバグを防ぐため、通信経路情報(ICE)を一時的に溜めるキュー
 			pc.iceQueue = [];
 
 			if(liveStreamWebRTC) {
 				liveStreamWebRTC.getTracks().forEach(track => pc.addTrack(track, liveStreamWebRTC));
 			} else {
-				// ★修正: 視聴のみの場合、強制的に「受信するよ」と宣言する
 				pc.addTransceiver('audio', { direction: 'recvonly' });
 			}
 			
@@ -581,7 +629,10 @@
 					audioEl.autoplay = true;
 					document.getElementById('voicha_audio_container').appendChild(audioEl);
 				}
-				// ★修正: ストリームが空の場合のフォールバック
+				
+				// ★ スピーカーミュート状態を新しい相手にも反映
+				audioEl.muted = isSpeakerMuted;
+
 				if (event.streams && event.streams[0]) {
 					audioEl.srcObject = event.streams[0];
 				} else {
@@ -604,7 +655,7 @@
 
 		async function startVoichaCall(peerUid) {
 			const pc = getPeerConnection(peerUid);
-			const offer = await pc.createOffer();
+			const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
 			await pc.setLocalDescription(offer);
 			sendVoichaSignal(peerUid, { type: 'offer', offer: offer });
 		}
@@ -614,7 +665,6 @@
 			try {
 				if(data.type === 'offer') {
 					await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-					// キューに溜まったICE候補を処理
 					while(pc.iceQueue.length > 0) { await pc.addIceCandidate(pc.iceQueue.shift()); }
 					
 					const answer = await pc.createAnswer();
@@ -623,7 +673,6 @@
 					
 				} else if(data.type === 'answer') {
 					await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-					// キューに溜まったICE候補を処理
 					while(pc.iceQueue.length > 0) { await pc.addIceCandidate(pc.iceQueue.shift()); }
 					
 				} else if(data.type === 'ice') {
@@ -631,7 +680,6 @@
 					if (pc.remoteDescription) {
 						await pc.addIceCandidate(candidate);
 					} else {
-						// RemoteDescriptionがセットされる前ならキューに溜める
 						pc.iceQueue.push(candidate);
 					}
 				}

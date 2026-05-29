@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>個人用マルチ掲示板（WebRTC 専用ID表示版）</title>
+	<title>個人用マルチ掲示板（WebRTC 通信安定化・完全版）</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<style>
@@ -243,6 +243,7 @@
 							if (!justPosted) renderScreen();
 							else justPosted = false; 
 						}
+						
 						if (!currentThreadId) { document.getElementById('vertical_headline_area').style.display = 'block'; initHeadline(); }
 					});
 				});
@@ -304,13 +305,13 @@
 				document.getElementById('board_header_area').style.display = 'none'; document.getElementById('create_thread_area').style.display = 'none';
 				
 				let wf = th.voicha ? '📶 ' : '';
-				
 				let html = `<div class="ch2-wrapper">
 					<div class="ch2-nav"><a href="?board=${currentBoard}">[板に戻る]</a><a href="#">全部</a> <a href="#">最新50</a> <a href="#">まとめる</a> | <a href="#">設定</a> | <a href="#">履歴</a><br>前 次 <a href="#">1-</a></div>
 					<div class="ch2-search"><a href="#" onclick="showImageGallery(); return false;" style="font-weight:bold;">画像一覧</a>　<input type="text" placeholder="キーワード入力" size="20"><button style="font-size:12px; padding:1px 6px;">スレ内検索</button></div>
 					<hr style="border:0; border-top:1px solid #ccc; margin:10px 0;">
 					<div class="ch2-title">${wf}${escapeHtml(th.title)} (${th.posts.length})</div>`;
 				
+				// ★ 生配信バナー（明確なボタンUI）
 				if (th.voicha) {
 					let vtext = '';
 					if (th.voicha.limit === 1) vtext = '※ひとらじ配信中（スレ主のみ）';
@@ -321,7 +322,7 @@
 						<span>${vtext}</span>
 						<div class="voicha-buttons">
 							<button class="modal-btn" style="background:#007bff; color:#fff; padding:4px 10px; font-size:12px; border-color:#0062cc;" onclick="joinVoicha(false)">🎧 視聴する</button>
-							<button class="modal-btn" style="background:#28a745; color:#fff; padding:4px 10px; font-size:12px; border-color:#218838;" onclick="joinVoicha(true)">🎙️ 配信に参加</button>
+							<button class="modal-btn" style="background:#28a745; color:#fff; padding:4px 10px; font-size:12px; border-color:#218838;" onclick="joinVoicha(true)">🎙️ 配信する</button>
 						</div>
 					</div>`;
 				}
@@ -446,15 +447,18 @@
 		function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
 
 		// ==========================================
-		// WebRTC 生配信（P2Pフルメッシュ通信）
+		// ★ WebRTC 生配信（通信安定化・バグ修正版）
 		// ==========================================
-		let myVoichaUid = null; let voichaUnsubscribes = []; let peerConnections = {}; let liveStreamWebRTC = null; let liveAudioCtx, liveAnalyser, liveMicInterval;
+		let myVoichaUid = null; 
+		let voichaUnsubscribes = []; 
+		let peerConnections = {}; 
+		let liveStreamWebRTC = null; 
+		let liveAudioCtx, liveAnalyser, liveMicInterval;
 
 		async function joinVoicha(isBroadcaster) {
 			document.getElementById('voicha_live_modal').style.display = 'flex';
 			document.getElementById('voicha_live_status').innerText = '接続の準備中...';
 			
-			// ★ ぬとらじ専用ID（ランダムな英数字8桁）を生成して表示
 			let myNutoId = Math.random().toString(36).substring(2, 10).toUpperCase();
 			document.getElementById('voicha_live_id').innerText = 'ID: ' + myNutoId;
 			
@@ -536,15 +540,39 @@
 				await setDoc_ref(doc_ref(usersRef, myVoichaUid), { active: true, time: Date.now(), isBroadcaster: isBroadcaster });
 				
 			} catch(e) {
-				document.getElementById('voicha_live_status').innerText = '⚠️ エラー：マイクへのアクセスが拒否されました。';
+				document.getElementById('voicha_live_status').innerText = '⚠️ エラー：マイクへのアクセスが拒否されました。視聴モードで参加します。';
+				document.getElementById('voicha_live_icon').innerText = '🎧';
+				document.getElementById('voicha_live_role').innerText = '視聴中';
+				document.getElementById('voicha_mic_bar').style.display = 'none';
+				isBroadcaster = false;
+				
+				// フォールバックで視聴者として登録し直す
+				await setDoc_ref(doc_ref(usersRef, myVoichaUid), { active: true, time: Date.now(), isBroadcaster: false });
 			}
 		}
 
 		function getPeerConnection(peerUid) {
 			if(peerConnections[peerUid]) return peerConnections[peerUid];
-			const pc = new RTCPeerConnection({ iceServers: [{urls: 'stun:stun.l.google.com:19302'}] });
-			peerConnections[peerUid] = pc;
-			if(liveStreamWebRTC) liveStreamWebRTC.getTracks().forEach(track => pc.addTrack(track, liveStreamWebRTC));
+			
+			// ★修正: サーバーを複数用意して接続確率を上げる
+			const pc = new RTCPeerConnection({ 
+				iceServers: [
+					{urls: 'stun:stun.l.google.com:19302'},
+					{urls: 'stun:stun1.l.google.com:19302'},
+					{urls: 'stun:stun2.l.google.com:19302'}
+				] 
+			});
+			
+			// ★修正: タイミングバグを防ぐため、通信経路情報(ICE)を一時的に溜めるキュー
+			pc.iceQueue = [];
+
+			if(liveStreamWebRTC) {
+				liveStreamWebRTC.getTracks().forEach(track => pc.addTrack(track, liveStreamWebRTC));
+			} else {
+				// ★修正: 視聴のみの場合、強制的に「受信するよ」と宣言する
+				pc.addTransceiver('audio', { direction: 'recvonly' });
+			}
+			
 			pc.ontrack = event => {
 				let audioEl = document.getElementById('audio_webrtc_' + peerUid);
 				if(!audioEl) {
@@ -553,12 +581,20 @@
 					audioEl.autoplay = true;
 					document.getElementById('voicha_audio_container').appendChild(audioEl);
 				}
-				audioEl.srcObject = event.streams[0];
+				// ★修正: ストリームが空の場合のフォールバック
+				if (event.streams && event.streams[0]) {
+					audioEl.srcObject = event.streams[0];
+				} else {
+					audioEl.srcObject = new MediaStream([event.track]);
+				}
 				audioEl.play().catch(e => console.log('Auto-play prevented:', e));
 			};
+			
 			pc.onicecandidate = event => {
 				if(event.candidate) sendVoichaSignal(peerUid, { type: 'ice', candidate: event.candidate.toJSON() });
 			};
+			
+			peerConnections[peerUid] = pc;
 			return pc;
 		}
 
@@ -568,22 +604,39 @@
 
 		async function startVoichaCall(peerUid) {
 			const pc = getPeerConnection(peerUid);
-			const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
+			const offer = await pc.createOffer();
 			await pc.setLocalDescription(offer);
 			sendVoichaSignal(peerUid, { type: 'offer', offer: offer });
 		}
 
 		async function handleVoichaSignal(fromUid, data) {
 			const pc = getPeerConnection(fromUid);
-			if(data.type === 'offer') {
-				await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-				const answer = await pc.createAnswer();
-				await pc.setLocalDescription(answer);
-				sendVoichaSignal(fromUid, { type: 'answer', answer: answer });
-			} else if(data.type === 'answer') {
-				await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-			} else if(data.type === 'ice') {
-				await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+			try {
+				if(data.type === 'offer') {
+					await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+					// キューに溜まったICE候補を処理
+					while(pc.iceQueue.length > 0) { await pc.addIceCandidate(pc.iceQueue.shift()); }
+					
+					const answer = await pc.createAnswer();
+					await pc.setLocalDescription(answer);
+					sendVoichaSignal(fromUid, { type: 'answer', answer: answer });
+					
+				} else if(data.type === 'answer') {
+					await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+					// キューに溜まったICE候補を処理
+					while(pc.iceQueue.length > 0) { await pc.addIceCandidate(pc.iceQueue.shift()); }
+					
+				} else if(data.type === 'ice') {
+					const candidate = new RTCIceCandidate(data.candidate);
+					if (pc.remoteDescription) {
+						await pc.addIceCandidate(candidate);
+					} else {
+						// RemoteDescriptionがセットされる前ならキューに溜める
+						pc.iceQueue.push(candidate);
+					}
+				}
+			} catch(e) {
+				console.error("WebRTC Signal Error: ", e);
 			}
 		}
 
@@ -611,7 +664,7 @@
 			liveStreamWebRTC = null;
 		}
 
-		/* --- 各種モーダル機能（地図・お絵描き・録音） --- */
+		/* --- その他モーダル群 --- */
 		function openMapModal(mode) { activeFormMode = mode; document.getElementById('map_modal').style.display = 'flex'; if (!leafletMap) { leafletMap = L.map('map_picker').setView([35.681, 139.767], 13); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(leafletMap); leafletMap.on('click', e => { if (mapMarker) leafletMap.removeLayer(mapMarker); mapMarker = L.marker(e.latlng).addTo(leafletMap); }); } setTimeout(() => { leafletMap.invalidateSize(); }, 200); }
 		function closeMapModal() { document.getElementById('map_modal').style.display = 'none'; }
 		function saveMapData() { if (!mapMarker) return; const l = mapMarker.getLatLng(); mapDataInfo = { lat: l.lat, lng: l.lng }; closeMapModal(); document.getElementById(activeFormMode === 'create' ? 'map_status_create' : 'map_status_reply').style.display = 'block'; }
@@ -633,7 +686,6 @@
 		function saveOekakiCanvas() { oekakiDataUrl = canvas.toDataURL('image/png'); closeOekakiModal(); document.getElementById(activeFormMode === 'create' ? 'oekaki_status_create' : 'oekaki_status_reply').style.display = 'block'; }
 		function applyAIFilter() { const tc=document.createElement('canvas'); tc.width=canvas.width; tc.height=canvas.height; tc.getContext('2d').drawImage(canvas,0,0); ctx.filter='contrast(1.5) saturate(1.2) blur(0.5px)'; ctx.drawImage(tc,0,0); ctx.filter='none'; }
 
-		let mediaRec, aChunks = [], mStream, origVoice = null;
 		function openVoiceModal(mode) {
 			activeFormMode = mode; document.getElementById('voice_modal').style.display = 'flex'; document.getElementById('voice_preview').style.display = 'none'; document.getElementById('voice_status').innerText="待機中...";
 			document.getElementById('voice_record_btn').disabled = false; document.getElementById('voice_stop_btn').disabled = true;

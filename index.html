@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>個人用マルチ掲示板（生配信ミニプレイヤー化・即退出対応版）</title>
+	<title>個人用マルチ掲示板（参加者一覧表示・完全版）</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<style>
@@ -53,6 +53,7 @@
 		.tool-btn { background: #f8f8f8; border: 1px solid #aaa; padding: 4px 12px; cursor: pointer; border-radius: 2px; color: #555; font-size: 13px; font-weight: normal;}
 		.tool-btn:hover { background: #e8e8e8; }
 		.tool-btn.active { background: #e0e0e0; border-color: #777; box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); }
+		.tool-img::before { content: "画像"; } .tool-pin::before { content: "位置"; } .tool-msg::before { content: "Aa"; } .tool-pen::before { content: "描画"; }
 		.ch2-submit { flex-grow: 1; font-weight: bold; font-size: 15px; padding: 6px; cursor: pointer; } .ch2-submit::before { content: "■ 投稿する"; }
 		
 		/* モーダル群 */
@@ -70,12 +71,13 @@
 		/* --- 生配信UI用スタイル --- */
 		.voicha-banner { padding:8px 15px; margin-bottom:15px; border:1px solid; border-radius:4px; font-weight:bold; display:flex; justify-content:space-between; align-items:center; flex-wrap: wrap; gap: 10px;}
 		.voicha-buttons { display: flex; gap: 8px; }
-		.live-user-icon { width: 50px; height: 50px; background: #e0e0e0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 24px; margin: 0 auto; border: 3px solid #28a745; }
-		.live-mic-bar { width: 100%; height: 6px; background: #ccc; margin-top: 8px; border-radius: 3px; overflow: hidden; }
-		.live-mic-level { height: 100%; width: 0%; background: #28a745; transition: width 0.1s; }
 
-		/* ★ 右下固定ミニプレイヤーのスタイル */
-		#voicha_live_panel { display: none; position: fixed; bottom: 20px; right: 20px; width: 230px; background: #fff; border: 3px solid #28a745; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); z-index: 9999; padding: 15px; }
+		/* ミニプレイヤーと参加者リスト */
+		#voicha_live_panel { display: none; position: fixed; bottom: 20px; right: 20px; width: 280px; background: #fff; border: 3px solid #28a745; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); z-index: 9999; padding: 15px; }
+		#voicha_participants_list { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-bottom:15px; max-height:130px; overflow-y:auto; padding: 5px; background: #f9f9f9; border-radius: 4px; border: 1px solid #eee; }
+		
+		.live-mic-bar { width: 100%; height: 6px; background: #ccc; margin-top: 5px; border-radius: 3px; overflow: hidden; }
+		.live-mic-level { height: 100%; width: 0%; background: #28a745; transition: width 0.1s; }
 
 		/* 画像ギャラリー追加 */
 		#image_gallery_modal .modal-header { padding: 15px 25px; text-align: right; background: #222; position: sticky; top: 0; z-index: 1001; border-bottom: 1px solid #444; width: 100%; box-sizing: border-box; }
@@ -187,14 +189,13 @@
 	
 	<div id="voicha_live_panel">
 		<div style="font-weight:bold; margin-bottom:10px; font-size:15px; border-bottom:1px solid #ccc; padding-bottom:5px; color:#333;">📶 ぬとらじルーム</div>
-		<div id="voicha_live_status" style="margin-bottom: 15px; font-size:11px; color:#555; text-align:center;">システムに接続中...</div>
-		<div style="display:flex; justify-content:center; gap:15px; margin-bottom:15px;">
-			<div style="text-align:center;">
-				<div class="live-user-icon" id="voicha_live_icon" style="width:40px; height:40px; font-size:20px;">👤</div>
-				<div style="font-size:12px; margin-top:5px; font-weight:bold; color:#0056b3;" id="voicha_live_id">ID: 取得中...</div>
-				<div style="font-size:10px; margin-top:2px; color:#555;" id="voicha_live_role">準備中</div>
-				<div class="live-mic-bar" id="voicha_mic_bar" style="margin-top:5px;"><div id="voicha_mic_level" class="live-mic-level"></div></div>
-			</div>
+		<div id="voicha_live_status" style="margin-bottom: 10px; font-size:11px; color:#555; text-align:center;">システムに接続中...</div>
+		
+		<div id="voicha_participants_list"></div>
+		
+		<div id="voicha_mic_bar_wrapper" style="margin-bottom:15px; display:none;">
+			<div style="font-size:10px; color:#666; text-align:center;">あなたの声量：</div>
+			<div class="live-mic-bar" id="voicha_mic_bar"><div id="voicha_mic_level" class="live-mic-level"></div></div>
 		</div>
 		
 		<div style="margin-bottom: 12px; display:flex; justify-content:center; gap:5px;" id="voicha_control_buttons">
@@ -222,6 +223,9 @@
 		let isMicMuted = false;
 		let isSpeakerMuted = false;
 		let amIBroadcaster = false; 
+		
+		// ★参加者一覧を管理するオブジェクト
+		let activeParticipants = {};
 
 		let db, doc_ref, setDoc_ref, onSnapshot_ref, collection_ref, addDoc_ref, deleteDoc_ref, query_ref, where_ref, getDocs_ref, getDoc_ref;
 		let allBoardsCache = { 'main': [], 'game': [], 'music': [], 'memo': [] };
@@ -541,9 +545,29 @@
 		function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
 
 		// ==========================================
-		// WebRTC 生配信
+		// WebRTC 生配信（参加者一覧機能付き）
 		// ==========================================
 		let myVoichaUid = null; let voichaUnsubscribes = []; let peerConnections = {}; let liveStreamWebRTC = null; let liveAudioCtx, liveAnalyser, liveMicInterval;
+
+		// ★ 参加者アイコンを画面に描画する関数
+		function renderVoichaParticipants() {
+			const container = document.getElementById('voicha_participants_list');
+			if(!container) return;
+			let html = '';
+			for(let uid in activeParticipants) {
+				const p = activeParticipants[uid];
+				const icon = p.isBroadcaster ? '🎙️' : '🎧';
+				const borderStr = p.isBroadcaster ? 'border: 2px solid #28a745;' : 'border: 2px solid #6c757d; opacity:0.8;';
+				const meMark = p.isMe ? '<div style="color:red; font-size:9px; margin-top:2px;">(あなた)</div>' : '';
+				
+				html += `<div style="text-align:center; width:45px;">
+					<div style="width:32px; height:32px; background:#e0e0e0; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:14px; margin:0 auto; ${borderStr}">${icon}</div>
+					<div style="font-size:10px; margin-top:2px; font-weight:bold; overflow:hidden; text-overflow:ellipsis;">${p.id}</div>
+					${meMark}
+				</div>`;
+			}
+			container.innerHTML = html;
+		}
 
 		function toggleMic() {
 			if(!liveStreamWebRTC) return;
@@ -565,18 +589,31 @@
 		async function joinVoicha(isBroadcaster) {
 			amIBroadcaster = isBroadcaster;
 			isMicMuted = false; isSpeakerMuted = false;
+			activeParticipants = {}; // リセット
+
 			const btnMic = document.getElementById('btn_mute_mic');
 			btnMic.innerText = '🎤 マイク ON'; btnMic.style.background = '#f0f0f0'; btnMic.style.color = '#333';
 			const btnSpk = document.getElementById('btn_mute_speaker');
 			btnSpk.innerText = '🔈 スピーカー ON'; btnSpk.style.background = '#f0f0f0'; btnSpk.style.color = '#333';
-			if (amIBroadcaster) btnMic.style.display = 'inline-block'; else btnMic.style.display = 'none';
+			
+			if (amIBroadcaster) {
+				btnMic.style.display = 'inline-block';
+				document.getElementById('voicha_mic_bar_wrapper').style.display = 'block';
+			} else {
+				btnMic.style.display = 'none';
+				document.getElementById('voicha_mic_bar_wrapper').style.display = 'none';
+			}
 
 			document.getElementById('voicha_live_panel').style.display = 'block';
 			document.getElementById('voicha_live_status').innerText = '接続の準備中...';
 			
-			let myNutoId = Math.random().toString(36).substring(2, 10).toUpperCase();
-			document.getElementById('voicha_live_id').innerText = 'ID: ' + myNutoId;
+			let myNutoId = Math.random().toString(36).substring(2, 6).toUpperCase(); // 4桁の短いIDにする
 			myVoichaUid = 'user_' + getDailyId() + '_' + myNutoId;
+			
+			// 自分をリストに追加
+			activeParticipants[myVoichaUid] = { id: myNutoId, isBroadcaster: amIBroadcaster, isMe: true };
+			renderVoichaParticipants();
+
 			const usersRef = collection_ref(db, 'voicha_users', currentThreadId, 'participants');
 			const signalsRef = collection_ref(db, 'voicha_signals');
 			
@@ -593,6 +630,9 @@
 						alert(`配信枠（上限${limit}人）が満員です。\n視聴モードで参加します。`);
 						amIBroadcaster = false;
 						btnMic.style.display = 'none';
+						document.getElementById('voicha_mic_bar_wrapper').style.display = 'none';
+						activeParticipants[myVoichaUid].isBroadcaster = false;
+						renderVoichaParticipants();
 					}
 				}
 
@@ -610,10 +650,7 @@
 						let percent = Math.min(100, ((sum / dataArray.length) / 128) * 100);
 						document.getElementById('voicha_mic_level').style.width = percent + '%';
 					}, 100);
-					document.getElementById('voicha_live_status').innerText = '🔴 配信中（他の人の声も聞こえます）';
-					document.getElementById('voicha_live_icon').innerText = '🎙️';
-					document.getElementById('voicha_live_role').innerText = '配信中';
-					document.getElementById('voicha_mic_bar').style.display = 'block';
+					document.getElementById('voicha_live_status').innerText = '🔴 配信中';
 					
 					let currentData = await getDoc_ref(doc_ref(db, "bbs_data", currentBoard));
 					if (currentData.exists()) {
@@ -626,10 +663,7 @@
 					}
 
 				} else {
-					document.getElementById('voicha_live_status').innerText = '🎧 視聴モードで参加しています';
-					document.getElementById('voicha_live_icon').innerText = '🎧';
-					document.getElementById('voicha_live_role').innerText = '視聴中';
-					document.getElementById('voicha_mic_bar').style.display = 'none';
+					document.getElementById('voicha_live_status').innerText = '🎧 視聴中';
 				}
 				
 				const q = query_ref(signalsRef, where_ref("to", "==", myVoichaUid), where_ref("thread", "==", currentThreadId));
@@ -648,10 +682,23 @@
 					snap.docChanges().forEach(change => {
 						const peerUid = change.doc.id;
 						if(peerUid === myVoichaUid) return;
+						
 						if(change.type === 'added') {
+							// リストに追加
+							activeParticipants[peerUid] = { 
+								id: peerUid.split('_')[2] || '????',
+								isBroadcaster: change.doc.data().isBroadcaster,
+								isMe: false
+							};
 							if(myVoichaUid > peerUid) startVoichaCall(peerUid);
 						}
+						if(change.type === 'modified') {
+							if(activeParticipants[peerUid]) {
+								activeParticipants[peerUid].isBroadcaster = change.doc.data().isBroadcaster;
+							}
+						}
 						if(change.type === 'removed') {
+							delete activeParticipants[peerUid];
 							if(peerConnections[peerUid]) {
 								peerConnections[peerUid].close();
 								delete peerConnections[peerUid];
@@ -660,18 +707,19 @@
 							}
 						}
 					});
+					renderVoichaParticipants(); // 画面更新
 				});
 				voichaUnsubscribes.push(unsubUsers);
 				
 				await setDoc_ref(doc_ref(usersRef, myVoichaUid), { active: true, time: Date.now(), isBroadcaster: amIBroadcaster });
 				
 			} catch(e) {
-				document.getElementById('voicha_live_status').innerText = '⚠️ エラー：マイクの許可がありません。視聴モードで参加します。';
-				document.getElementById('voicha_live_icon').innerText = '🎧';
-				document.getElementById('voicha_live_role').innerText = '視聴中';
-				document.getElementById('voicha_mic_bar').style.display = 'none';
+				document.getElementById('voicha_live_status').innerText = '⚠️ エラー：マイク許可がありません';
 				amIBroadcaster = false;
 				btnMic.style.display = 'none';
+				document.getElementById('voicha_mic_bar_wrapper').style.display = 'none';
+				activeParticipants[myVoichaUid].isBroadcaster = false;
+				renderVoichaParticipants();
 				await setDoc_ref(doc_ref(usersRef, myVoichaUid), { active: true, time: Date.now(), isBroadcaster: false });
 			}
 		}
@@ -775,9 +823,12 @@
 			if(liveMicInterval) clearInterval(liveMicInterval);
 			if(liveStreamWebRTC) liveStreamWebRTC.getTracks().forEach(t => t.stop());
 			if(liveAudioCtx) liveAudioCtx.close();
+			
 			document.getElementById('voicha_live_panel').style.display = 'none';
 			document.getElementById('voicha_mic_level').style.width = '0%';
 			myVoichaUid = null; liveStreamWebRTC = null; amIBroadcaster = false;
+			activeParticipants = {};
+			renderVoichaParticipants();
 		}
 
 		/* --- その他モーダル群 --- */

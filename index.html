@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>個人用マルチ掲示板（WebRTC 誰でも視聴できる完全版）</title>
+	<title>個人用マルチ掲示板（WebRTC 専用ID表示版）</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<style>
@@ -45,9 +45,13 @@
 		.ch2-form-area { background-color: #e0e0e0; padding: 12px; display: inline-block; border-radius: 4px; margin-top: 20px; min-width: 450px; }
 		.form-row { display: flex; align-items: center; margin-bottom: 6px; gap: 8px; flex-wrap: wrap; }
 		.ch2-form-area textarea { width: 100%; height: 100px; padding: 8px; font-size: 14px; }
-		.tool-btn { background: #f8f8f8; border: 1px solid #aaa; padding: 4px 12px; cursor: pointer; border-radius: 2px; color: #555; }
+		.tool-btn { background: #f8f8f8; border: 1px solid #aaa; padding: 4px 12px; cursor: pointer; border-radius: 2px; color: #555; font-size: 13px; font-weight: normal;}
+		.tool-btn:hover { background: #e8e8e8; }
+		.tool-btn.active { background: #e0e0e0; border-color: #777; box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); }
 		.tool-img::before { content: "画像"; } .tool-pin::before { content: "位置"; } .tool-msg::before { content: "Aa"; } .tool-pen::before { content: "描画"; }
 		.ch2-submit { flex-grow: 1; font-weight: bold; font-size: 15px; padding: 6px; cursor: pointer; } .ch2-submit::before { content: "■ 投稿する"; }
+		
+		/* モーダル群 */
 		.modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 2000; align-items: center; justify-content: center; }
 		.modal-box { background: #fff; padding: 20px; border-radius: 5px; text-align: center; max-width: 90%; }
 		.btn-oekaki-toggle { background: #fff3cd; border: 1px solid #ffeeba; color: #856404; padding: 5px 10px; cursor: pointer; font-size: 12px; font-weight: bold; }
@@ -57,9 +61,6 @@
 		
 		#oekaki_canvas { border: 1px solid #999; background: #fff; cursor: crosshair; margin-bottom: 10px; max-width: 100%; }
 		.oekaki-tools { margin-bottom: 10px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; align-items: center; }
-		.oekaki-tools .tool-btn { font-size: 13px; font-weight: normal; padding: 3px 8px; } 
-		.oekaki-tools .tool-btn.active { background: #e0e0e0; border-color: #777; box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); }
-		
 		#map_picker { height: 300px; width: 100%; background: #eee; border: 1px solid #ccc; margin-bottom: 10px; z-index: 2001; }
 		
 		/* --- 生配信UI用スタイル --- */
@@ -121,49 +122,49 @@
 		</div>
 	</div>
 
-	<div id="api_settings_modal" class="modal-overlay"><div class="modal-box"><div style="font-weight:bold; font-size:16px; margin-bottom:15px;">⚙️ 外部API設定</div><input type="password" id="api_key_input" style="width:100%; padding:5px; margin-bottom:15px;" placeholder="sk-..."><button onclick="closeApiSettings()">キャンセル</button> <button onclick="saveApiSettings()">保存する</button></div></div>
+	<div id="api_settings_modal" class="modal-overlay"><div class="modal-box"><div style="font-weight:bold; font-size:16px; margin-bottom:15px;">⚙️ 外部API設定</div><input type="password" id="api_key_input" style="width:100%; padding:5px; margin-bottom:15px;" placeholder="sk-..."><button class="modal-btn" onclick="closeApiSettings()">キャンセル</button> <button class="modal-btn" style="background:#4a90e2; color:#fff;" onclick="saveApiSettings()">保存する</button></div></div>
+	
 	<div id="image_gallery_modal" class="modal-overlay" style="align-items: flex-start;"><div style="width:100%;"><div class="modal-header"><span class="modal-close" onclick="closeImageGallery()">✖ 閉じる</span></div><div class="modal-content" id="gallery_content"></div></div></div>
 	
 	<div id="oekaki_modal" class="modal-overlay">
 		<div class="modal-box">
-			<div style="font-weight:bold; margin-bottom:10px;">お絵描き</div>
-			<button style="margin-bottom:10px;" onclick="applyAIFilter()">✨ AI補正</button><br>
+			<div style="font-weight:bold; margin-bottom:10px;">🎨 お絵描き</div>
+			<button class="modal-btn" style="margin-bottom:10px; background:#ff9900; color:#fff;" onclick="applyAIFilter()">✨ AI補正</button><br>
 			<canvas id="oekaki_canvas" width="400" height="300"></canvas>
-			
 			<div class="oekaki-tools">
 				<div style="display:flex; align-items:center; gap:3px;">
 					<label for="oekaki_color_picker" style="font-size:11px;">色：</label>
 					<input type="color" id="oekaki_color_picker" value="#000000" style="width:35px; height:28px; cursor:pointer; padding:1px; border:1px solid #aaa;">
 				</div>
 				<div style="display:flex; gap:4px;">
-					<button type="button" id="tool_pen" class="tool-btn active" style="padding: 3px 8px;" onclick="setOekakiMode('pen')">🖊 ペン</button>
-					<button type="button" id="tool_eraser" class="tool-btn" style="padding: 3px 8px;" onclick="setOekakiMode('eraser')">🧽 消しゴム</button>
+					<button type="button" id="tool_pen" class="tool-btn active" onclick="setOekakiMode('pen')">🖊 ペン</button>
+					<button type="button" id="tool_eraser" class="tool-btn" onclick="setOekakiMode('eraser')">🧽 消しゴム</button>
 				</div>
 				<div style="display:flex; align-items:center; gap:3px;">
 					<label for="oekaki_pen_range" style="font-size:11px;">太：</label>
 					<input type="range" id="oekaki_pen_range" min="1" max="30" value="5" step="1" style="width:80px; vertical-align:middle;">
 				</div>
 			</div>
-			
-			<button onclick="clearOekakiCanvas()">全消去</button> 
-			<button onclick="closeOekakiModal()">キャンセル</button> 
-			<button onclick="saveOekakiCanvas()">画像をセット</button>
+			<button class="modal-btn" onclick="clearOekakiCanvas()">全消去</button> 
+			<button class="modal-btn" onclick="closeOekakiModal()">キャンセル</button> 
+			<button class="modal-btn" style="background:#4a90e2; color:#fff;" onclick="saveOekakiCanvas()">画像をセット</button>
 		</div>
 	</div>
 	
 	<div id="voice_modal" class="modal-overlay">
 		<div class="modal-box" style="width: 320px;">
 			<div style="font-weight:bold; margin-bottom:15px; font-size:16px;">🎤 ボイス録音</div>
-			<div style="margin-bottom: 15px; display:flex; gap:10px;"><select id="voice_effect" style="flex-grow:1;"><option value="normal">標準</option><option value="robot">🤖 ロボット</option><option value="cave">⛰️ 洞窟 (エコー)</option><option value="telephone">☎️ テレフォン</option></select><button onclick="applyVoiceEffect()" id="voice_update_btn" disabled>🔄 更新</button></div>
-			<div style="margin-bottom: 15px;"><div id="voice_status" style="color:#d9534f; margin-bottom:5px;">待機中...</div><button id="voice_record_btn" onclick="startVoiceRecord()">🔴 録音</button> <button id="voice_stop_btn" onclick="stopVoiceRecord()" disabled>⏹ 停止</button></div>
-			<audio id="voice_preview" controls style="width: 100%; display: none;"></audio><br><br>
-			<button onclick="closeVoiceModal()">キャンセル</button> <button onclick="saveVoiceData()" id="voice_save_btn" disabled>音声をセット</button>
+			<div style="margin-bottom: 15px; display:flex; gap:10px;"><select id="voice_effect" style="flex-grow:1;"><option value="normal">標準</option><option value="robot">🤖 ロボット</option><option value="cave">⛰️ 洞窟 (エコー)</option><option value="telephone">☎️ テレフォン</option></select><button class="modal-btn" style="background:#ff9900; color:#fff;" onclick="applyVoiceEffect()" id="voice_update_btn" disabled>🔄 更新</button></div>
+			<div style="margin-bottom: 15px;"><div id="voice_status" style="color:#d9534f; margin-bottom:5px; font-weight:bold;">待機中...</div><button class="modal-btn" style="background:#d9534f; color:#fff;" id="voice_record_btn" onclick="startVoiceRecord()">🔴 録音開始</button> <button class="modal-btn" style="background:#5bc0de; color:#fff;" id="voice_stop_btn" onclick="stopVoiceRecord()" disabled>⏹ 停止</button></div>
+			<audio id="voice_preview" controls style="width: 100%; display: none; margin-bottom:15px; outline:none; height:40px;"></audio>
+			<button class="modal-btn" onclick="closeVoiceModal()">キャンセル</button> <button class="modal-btn" style="background:#0000ff; color:#fff;" onclick="saveVoiceData()" id="voice_save_btn" disabled>音声をセット</button>
 		</div>
 	</div>
+	
 	<div id="map_modal" class="modal-overlay">
 		<div class="modal-box" style="width: 500px; max-width: 95%;">
-			<div style="font-weight:bold; margin-bottom:10px;">📍 位置情報を選択</div><div style="margin-bottom: 10px;"><a href="#" onclick="getCurrentLocation(); return false;">[自分の現在地を取得する]</a></div>
-			<div id="map_picker"></div><button onclick="closeMapModal()">キャンセル</button> <button onclick="saveMapData()">位置をセット</button>
+			<div style="font-weight:bold; margin-bottom:10px;">📍 位置情報を選択</div><div style="margin-bottom: 10px;"><a href="#" onclick="getCurrentLocation(); return false;" style="color:#0056b3; font-weight:bold;">[自分の現在地を取得する]</a></div>
+			<div id="map_picker"></div><button class="modal-btn" onclick="closeMapModal()">キャンセル</button> <button class="modal-btn" style="background:#4a90e2; color:#fff;" onclick="saveMapData()">位置をセット</button>
 		</div>
 	</div>
 	
@@ -174,7 +175,8 @@
 			<div style="display:flex; justify-content:center; gap:20px; margin-bottom:20px;">
 				<div style="text-align:center;">
 					<div class="live-user-icon" id="voicha_live_icon">👤</div>
-					<div style="font-size:11px; margin-top:5px; font-weight:bold;" id="voicha_live_role">あなた</div>
+					<div style="font-size:13px; margin-top:5px; font-weight:bold; color:#0056b3;" id="voicha_live_id">ID: 取得中...</div>
+					<div style="font-size:11px; margin-top:2px; color:#555;" id="voicha_live_role">準備中</div>
 					<div class="live-mic-bar" id="voicha_mic_bar"><div id="voicha_mic_level" class="live-mic-level"></div></div>
 				</div>
 			</div>
@@ -309,7 +311,6 @@
 					<hr style="border:0; border-top:1px solid #ccc; margin:10px 0;">
 					<div class="ch2-title">${wf}${escapeHtml(th.title)} (${th.posts.length})</div>`;
 				
-				// ★ 生配信バナー（ボタンを２つに分けたUI）
 				if (th.voicha) {
 					let vtext = '';
 					if (th.voicha.limit === 1) vtext = '※ひとらじ配信中（スレ主のみ）';
@@ -449,12 +450,15 @@
 		// ==========================================
 		let myVoichaUid = null; let voichaUnsubscribes = []; let peerConnections = {}; let liveStreamWebRTC = null; let liveAudioCtx, liveAnalyser, liveMicInterval;
 
-		// ★ ボタンの引数 (isBroadcaster) を受け取るように変更
 		async function joinVoicha(isBroadcaster) {
 			document.getElementById('voicha_live_modal').style.display = 'flex';
 			document.getElementById('voicha_live_status').innerText = '接続の準備中...';
 			
-			myVoichaUid = 'user_' + getDailyId() + '_' + Math.floor(Math.random()*10000);
+			// ★ ぬとらじ専用ID（ランダムな英数字8桁）を生成して表示
+			let myNutoId = Math.random().toString(36).substring(2, 10).toUpperCase();
+			document.getElementById('voicha_live_id').innerText = 'ID: ' + myNutoId;
+			
+			myVoichaUid = 'user_' + getDailyId() + '_' + myNutoId;
 			const usersRef = collection_ref(db, 'voicha_users', currentThreadId, 'participants');
 			const signalsRef = collection_ref(db, 'voicha_signals');
 			
@@ -564,7 +568,6 @@
 
 		async function startVoichaCall(peerUid) {
 			const pc = getPeerConnection(peerUid);
-			// ★通信バグ修正：マイクを持たない視聴者も必ず音声を受信できるようにオプションを指定
 			const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
 			await pc.setLocalDescription(offer);
 			sendVoichaSignal(peerUid, { type: 'offer', offer: offer });
@@ -608,7 +611,7 @@
 			liveStreamWebRTC = null;
 		}
 
-		/* --- その他モーダル群 --- */
+		/* --- 各種モーダル機能（地図・お絵描き・録音） --- */
 		function openMapModal(mode) { activeFormMode = mode; document.getElementById('map_modal').style.display = 'flex'; if (!leafletMap) { leafletMap = L.map('map_picker').setView([35.681, 139.767], 13); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(leafletMap); leafletMap.on('click', e => { if (mapMarker) leafletMap.removeLayer(mapMarker); mapMarker = L.marker(e.latlng).addTo(leafletMap); }); } setTimeout(() => { leafletMap.invalidateSize(); }, 200); }
 		function closeMapModal() { document.getElementById('map_modal').style.display = 'none'; }
 		function saveMapData() { if (!mapMarker) return; const l = mapMarker.getLatLng(); mapDataInfo = { lat: l.lat, lng: l.lng }; closeMapModal(); document.getElementById(activeFormMode === 'create' ? 'map_status_create' : 'map_status_reply').style.display = 'block'; }

@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>個人用マルチ掲示板（WebRTC 生配信・画像一覧 完全版）</title>
+	<title>個人用マルチ掲示板（WebRTC 生配信・自由なお絵描き 完全版）</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<style>
@@ -54,10 +54,13 @@
 		.btn-voice-toggle { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; padding: 5px 10px; cursor: pointer; font-size: 12px; font-weight: bold; margin-left: 5px; }
 		.btn-map-toggle { background: #e2e3e5; border: 1px solid #d6d8db; color: #383d41; padding: 5px 10px; cursor: pointer; font-size: 12px; font-weight: bold; margin-left: 5px; }
 		.status-indicator { color: #008000; font-size: 12px; margin-top: 3px; display: none; font-weight: bold; }
+		
+		/* ★お絵描きモーダル CSS修正 */
 		#oekaki_canvas { border: 1px solid #999; background: #fff; cursor: crosshair; margin-bottom: 10px; max-width: 100%; }
-		.oekaki-tools { margin-bottom: 10px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-		.color-btn { width: 25px; height: 25px; border: 2px solid #ccc; border-radius: 50%; cursor: pointer; } .color-btn.active { border-color: #000; transform: scale(1.1); }
-		.eraser-btn { background: #fff; border: 2px solid #aaa; padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 12px; font-weight: bold; }
+		.oekaki-tools { margin-bottom: 10px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; align-items: center; }
+		.oekaki-tools .tool-btn { font-size: 13px; font-weight: normal; padding: 3px 8px; } /* 既存の .tool-btn を継承・上書き */
+		.oekaki-tools .tool-btn.active { background: #e0e0e0; border-color: #777; box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); }
+		
 		#map_picker { height: 300px; width: 100%; background: #eee; border: 1px solid #ccc; margin-bottom: 10px; z-index: 2001; }
 		
 		/* --- 生配信UI用スタイル --- */
@@ -120,13 +123,34 @@
 
 	<div id="api_settings_modal" class="modal-overlay"><div class="modal-box"><div style="font-weight:bold; font-size:16px; margin-bottom:15px;">⚙️ 外部API設定</div><input type="password" id="api_key_input" style="width:100%; padding:5px; margin-bottom:15px;" placeholder="sk-..."><button onclick="closeApiSettings()">キャンセル</button> <button onclick="saveApiSettings()">保存する</button></div></div>
 	<div id="image_gallery_modal" class="modal-overlay" style="align-items: flex-start;"><div style="width:100%;"><div class="modal-header"><span class="modal-close" onclick="closeImageGallery()">✖ 閉じる</span></div><div class="modal-content" id="gallery_content"></div></div></div>
+	
 	<div id="oekaki_modal" class="modal-overlay">
-		<div class="modal-box"><div style="font-weight:bold; margin-bottom:10px;">お絵描き</div><button style="margin-bottom:10px;" onclick="applyAIFilter()">✨ AI補正</button><br><canvas id="oekaki_canvas" width="400" height="300"></canvas>
-			<div class="oekaki-tools"><div class="color-btn active" style="background:#000;" onclick="setOekakiColor('#000', this)"></div><div class="color-btn" style="background:#ff0000;" onclick="setOekakiColor('#ff0000', this)"></div><div class="color-btn" style="background:#0000ff;" onclick="setOekakiColor('#0000ff', this)"></div><button type="button" class="eraser-btn" onclick="setEraser(this)">消しゴム</button>
-			<select id="oekaki_pen_size" onchange="setOekakiSize(this.value)"><option value="2">細</option><option value="5" selected>中</option><option value="15">太</option></select></div>
-			<button onclick="clearOekakiCanvas()">全消去</button> <button onclick="closeOekakiModal()">キャンセル</button> <button onclick="saveOekakiCanvas()">画像をセット</button>
+		<div class="modal-box">
+			<div style="font-weight:bold; margin-bottom:10px;">お絵描き</div>
+			<button style="margin-bottom:10px;" onclick="applyAIFilter()">✨ AI補正</button><br>
+			<canvas id="oekaki_canvas" width="400" height="300"></canvas>
+			
+			<div class="oekaki-tools">
+				<div style="display:flex; align-items:center; gap:3px;">
+					<label for="oekaki_color_picker" style="font-size:11px;">色：</label>
+					<input type="color" id="oekaki_color_picker" value="#000000" style="width:35px; height:28px; cursor:pointer; padding:1px; border:1px solid #aaa;">
+				</div>
+				<div style="display:flex; gap:4px;">
+					<button type="button" id="tool_pen" class="tool-btn active" style="padding: 3px 8px;" onclick="setOekakiMode('pen')">🖊 ペン</button>
+					<button type="button" id="tool_eraser" class="tool-btn" style="padding: 3px 8px;" onclick="setOekakiMode('eraser')">🧽 消しゴム</button>
+				</div>
+				<div style="display:flex; align-items:center; gap:3px;">
+					<label for="oekaki_pen_range" style="font-size:11px;">太：</label>
+					<input type="range" id="oekaki_pen_range" min="1" max="30" value="5" step="1" style="width:80px; vertical-align:middle;">
+				</div>
+			</div>
+			
+			<button onclick="clearOekakiCanvas()">全消去</button> 
+			<button onclick="closeOekakiModal()">キャンセル</button> 
+			<button onclick="saveOekakiCanvas()">画像をセット</button>
 		</div>
 	</div>
+	
 	<div id="voice_modal" class="modal-overlay">
 		<div class="modal-box" style="width: 320px;">
 			<div style="font-weight:bold; margin-bottom:15px; font-size:16px;">🎤 ボイス録音</div>
@@ -279,7 +303,7 @@
 				
 				let wf = th.voicha ? '📶 ' : '';
 				
-				// ★ ここに「画像一覧」などの検索バーUIを復活！
+				// スレ内UI検索バーUIを復活！
 				let html = `<div class="ch2-wrapper">
 					<div class="ch2-nav"><a href="?board=${currentBoard}">[板に戻る]</a><a href="#">全部</a> <a href="#">最新50</a> <a href="#">まとめる</a> | <a href="#">設定</a> | <a href="#">履歴</a><br>前 次 <a href="#">1-</a></div>
 					<div class="ch2-search"><a href="#" onclick="showImageGallery(); return false;" style="font-weight:bold;">画像一覧</a>　<input type="text" placeholder="キーワード入力" size="20"><button style="font-size:12px; padding:1px 6px;">スレ内検索</button></div>
@@ -575,13 +599,85 @@
 		function saveMapData() { if (!mapMarker) return; const l = mapMarker.getLatLng(); mapDataInfo = { lat: l.lat, lng: l.lng }; closeMapModal(); document.getElementById(activeFormMode === 'create' ? 'map_status_create' : 'map_status_reply').style.display = 'block'; }
 		function getCurrentLocation() { if(navigator.geolocation) { navigator.geolocation.getCurrentPosition(p => { leafletMap.setView([p.coords.latitude, p.coords.longitude], 15); if(mapMarker) leafletMap.removeLayer(mapMarker); mapMarker = L.marker([p.coords.latitude, p.coords.longitude]).addTo(leafletMap); }); } }
 
-		function initOekakiEvents() { canvas = document.getElementById('oekaki_canvas'); ctx = canvas.getContext('2d'); clearOekakiCanvas(); ctx.lineCap = "round"; ctx.lineJoin = "round"; canvas.addEventListener('mousedown', e=>{isDrawing=true; ctx.beginPath(); ctx.moveTo(e.offsetX, e.offsetY);}); canvas.addEventListener('mousemove', e=>{if(isDrawing){ctx.lineTo(e.offsetX, e.offsetY); ctx.stroke();}}); canvas.addEventListener('mouseup', ()=>{isDrawing=false;}); }
-		function setOekakiColor(c, el) { ctx.strokeStyle = c; } function setEraser() { ctx.strokeStyle = '#fff'; } function setOekakiSize(s) { ctx.lineWidth = s; }
-		function clearOekakiCanvas() { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.strokeStyle="#000"; ctx.lineWidth=5;}
-		function openOekakiModal(mode) { activeFormMode = mode; document.getElementById('oekaki_modal').style.display = 'flex'; }
-		function closeOekakiModal() { document.getElementById('oekaki_modal').style.display = 'none'; }
-		function saveOekakiCanvas() { oekakiDataUrl = canvas.toDataURL('image/png'); closeOekakiModal(); document.getElementById(activeFormMode === 'create' ? 'oekaki_status_create' : 'oekaki_status_reply').style.display = 'block'; }
-		function applyAIFilter() { const tc=document.createElement('canvas'); tc.width=canvas.width; tc.height=canvas.height; tc.getContext('2d').drawImage(canvas,0,0); ctx.filter='contrast(1.5) saturate(1.2) blur(0.5px)'; ctx.drawImage(tc,0,0); ctx.filter='none'; }
+		// ★お絵描き用グローバル変数を追加/修正
+		let isDrawing = false; 
+		let ctx, canvas;
+		let oekakiMode = 'pen'; // 'pen' or 'eraser'
+		let oekakiColor = '#000000';
+		let oekakiSize = 5;
+
+		function initOekakiEvents() { 
+			canvas = document.getElementById('oekaki_canvas'); 
+			ctx = canvas.getContext('2d'); 
+			ctx.lineCap = "round"; 
+			ctx.lineJoin = "round";
+			clearOekakiCanvas(); // 初期値を設定
+
+			// HTML入力要素にリスナーを追加
+			document.getElementById('oekaki_color_picker').addEventListener('input', (e) => {
+				oekakiColor = e.target.value;
+			});
+
+			document.getElementById('oekaki_pen_range').addEventListener('input', (e) => {
+				oekakiSize = e.target.value;
+			});
+
+			canvas.addEventListener('mousedown', startDrawing);
+			canvas.addEventListener('mousemove', draw);
+			canvas.addEventListener('mouseup', stopDrawing);
+			canvas.addEventListener('mouseout', stopDrawing);
+
+			function startDrawing(e) {
+				isDrawing = true;
+				ctx.beginPath();
+				ctx.moveTo(e.offsetX, e.offsetY);
+				// MouseDown時点で最新のstrokeStyleとlineWidthを設定
+				ctx.strokeStyle = (oekakiMode === 'pen') ? oekakiColor : '#FFFFFF';
+				ctx.lineWidth = oekakiSize;
+			}
+
+			function draw(e) {
+				if (!isDrawing) return;
+				ctx.lineTo(e.offsetX, e.offsetY);
+				ctx.stroke();
+			}
+
+			function stopDrawing() {
+				isDrawing = false;
+			}
+		}
+
+		// ★モード切替
+		function setOekakiMode(mode) {
+			oekakiMode = mode;
+			// ボタンの見た目を切り替える
+			document.getElementById('tool_pen').classList.toggle('active', mode === 'pen');
+			document.getElementById('tool_eraser').classList.toggle('active', mode === 'eraser');
+			
+			// カーソルを変更
+			canvas.style.cursor = (mode === 'pen') ? "crosshair" : "cell";
+		}
+
+		// ★初期化処理を修正
+		function clearOekakiCanvas() { 
+			if (!ctx) return;
+			ctx.fillStyle = "#fff"; 
+			ctx.fillRect(0, 0, canvas.width, canvas.height); 
+			
+			// 初期状態をペンモード、黒、サイズ5に設定
+			oekakiMode = 'pen';
+			oekakiColor = '#000000';
+			oekakiSize = 5;
+			
+			// HTML要素の値もリセット
+			document.getElementById('oekaki_color_picker').value = oekakiColor;
+			document.getElementById('oekaki_pen_range').value = oekakiSize;
+			
+			// モードボタンのクラスもリセット
+			document.getElementById('tool_pen').classList.add('active');
+			document.getElementById('tool_eraser').classList.remove('active');
+			canvas.style.cursor = "crosshair";
+		}
 
 		function openVoiceModal(mode) {
 			activeFormMode = mode; document.getElementById('voice_modal').style.display = 'flex'; document.getElementById('voice_preview').style.display = 'none'; document.getElementById('voice_status').innerText="待機中...";
@@ -630,7 +726,7 @@
 		}
 		function saveVoiceData() { voiceDataUrl = document.getElementById('voice_preview').dataset.tmp; closeVoiceModal(); document.getElementById(activeFormMode==='create'?'voice_status_create':'voice_status_reply').style.display='block'; }
 
-		// ★ 画像ギャラリーを復活（JS関数）
+		// ★画像一覧ギャラリーを復活（JS関数）
 		function showImageGallery() {
 			const ths = getThreads(); const th = ths.find(t => t.id == currentThreadId); if (!th) return;
 			const gc = document.getElementById('gallery_content'); gc.innerHTML = ''; let hI = false;
@@ -639,6 +735,11 @@
 			document.getElementById('image_gallery_modal').style.display = 'block';
 		}
 		function closeImageGallery() { document.getElementById('image_gallery_modal').style.display = 'none'; }
+		
+		function openOekakiModal(mode) { activeFormMode = mode; document.getElementById('oekaki_modal').style.display = 'flex'; }
+		function closeOekakiModal() { document.getElementById('oekaki_modal').style.display = 'none'; }
+		function saveOekakiCanvas() { oekakiDataUrl = canvas.toDataURL('image/png'); closeOekakiModal(); document.getElementById(activeFormMode === 'create' ? 'oekaki_status_create' : 'oekaki_status_reply').style.display = 'block'; }
+		function applyAIFilter() { const tc=document.createElement('canvas'); tc.width=canvas.width; tc.height=canvas.height; tc.getContext('2d').drawImage(canvas,0,0); ctx.filter='contrast(1.5) saturate(1.2) blur(0.5px)'; ctx.drawImage(tc,0,0); ctx.filter='none'; }
 	</script>
 </body>
 </html>

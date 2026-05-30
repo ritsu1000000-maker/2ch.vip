@@ -3,10 +3,12 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>個人用マルチ掲示板（本物の位置情報連動・完全版）</title>
+	<title>個人用マルチ掲示板（特殊ローカルルール・スレタイコマンド完全対応版）</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<style>
+		@import url('https://fonts.googleapis.com/css2?family=DotGothic16&display=swap');
+		
 		body { background-color: #EFEFEF; color: #333333; font-family: "メイリオ", Meiryo, sans-serif; font-size: 14px; margin: 0; padding: 0 0 10px 0; }
 		a { color: #0000FF; text-decoration: none; } a:hover { text-decoration: underline; color: #FF0000; }
 		#container { width: 98%; max-width: 850px; margin: 10px auto; }
@@ -86,6 +88,9 @@
 		.gallery-item { text-align: center; color: #ddd; font-size: 13px; font-weight: bold; }
 		.gallery-item img { max-width: 200px; max-height: 200px; object-fit: cover; border: 3px solid #fff; cursor: pointer; transition: transform 0.2s; background: #fff; }
 		.gallery-item img:hover { transform: scale(1.05); border-color: #4a90e2; }
+		
+		/* ドットフォント強制用クラス */
+		.font-dot { font-family: 'DotGothic16', monospace !important; }
 	</style>
 </head>
 <body>
@@ -116,7 +121,7 @@
 			<div class="bbs_body">
 				<div class="form-title">新規スレッド作成</div>
 				<form onsubmit="submitForm(event)">
-					<div style="margin-bottom: 10px;"><label>タイトル：</label><br><input type="text" id="bbs_dai" style="width: 100%; max-width: 400px;" /></div>
+					<div style="margin-bottom: 10px;"><label>タイトル：</label><br><input type="text" id="bbs_dai" style="width: 100%; max-width: 400px;" placeholder="例：!sage !no_id !oekaki !timer !dot などのコマンド"/></div>
 					<div style="margin-bottom: 10px; display: flex; gap: 15px; flex-wrap: wrap; align-items: center;">
 						<div><label>名前：</label><br><input type="text" id="bbs_name" value="名無しさん" style="width:150px;"/></div>
 						<div><label>E-mail：</label><br><input type="text" id="bbs_email" placeholder="sage" style="width:150px;" /></div>
@@ -125,7 +130,24 @@
 					</div>
 					
 					<div class="command-bar">
-						<span style="font-size:11px; color:#666;">コマンド：</span>
+						<span style="font-size:11px; color:#666;">特殊：</span>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!no_id')">🆔無</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!sage')">⬇️強制sage</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!oekaki')">🎨絵限定</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!syogi')">♟将棋</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!moji3')">✂️3文字</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!kanji')">漢</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!hankaku')">半</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!sugi')">👕ワイルド</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!hakata')">🍜博多</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!osaka')">🐙大阪</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!hira')">あ</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!kana')">ア</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!dot')">👾ドット</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!timer')">⏱️1時間</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!kote')">🛡️コテ限</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!max10')">🔒上限10</button>
+						<span style="font-size:11px; color:#666; margin-left:10px;">通常：</span>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_msg', '!voicha')">📶ぬとらじ</button>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_msg', '!voicha:4')">📶ぬとらじ(4人)</button>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_msg', '!voicha:1')">📶ひとらじ</button>
@@ -141,7 +163,6 @@
 	</div>
 
 	<div id="api_settings_modal" class="modal-overlay"><div class="modal-box"><div style="font-weight:bold; font-size:16px; margin-bottom:15px;">⚙️ 外部API設定</div><input type="password" id="api_key_input" style="width:100%; padding:5px; margin-bottom:15px;" placeholder="sk-..."><button class="modal-btn" onclick="closeApiSettings()">キャンセル</button> <button class="modal-btn" style="background:#4a90e2; color:#fff;" onclick="saveApiSettings()">保存する</button></div></div>
-	
 	<div id="image_gallery_modal" class="modal-overlay" style="align-items: flex-start;"><div style="width:100%;"><div class="modal-header"><span class="modal-close" onclick="closeImageGallery()">✖ 閉じる</span></div><div class="modal-content" id="gallery_content"></div></div></div>
 	
 	<div id="oekaki_modal" class="modal-overlay">
@@ -192,19 +213,15 @@
 			<button class="modal-btn" id="btn_refresh_participants" style="font-size:10px; padding:3px 6px; cursor:pointer;" onclick="refreshParticipants()">🔄 更新</button>
 		</div>
 		<div id="voicha_live_status" style="margin-bottom: 10px; font-size:11px; color:#555; text-align:center;">システムに接続中...</div>
-		
 		<div id="voicha_participants_list"></div>
-		
 		<div id="voicha_mic_bar_wrapper" style="margin-bottom:15px; display:none;">
 			<div style="font-size:10px; color:#666; text-align:center;">あなたの声量：</div>
 			<div class="live-mic-bar" id="voicha_mic_bar"><div id="voicha_mic_level" class="live-mic-level"></div></div>
 		</div>
-		
 		<div style="margin-bottom: 12px; display:flex; justify-content:center; gap:5px;" id="voicha_control_buttons">
 			<button class="modal-btn" id="btn_mute_mic" style="display:none; font-size:11px; padding:4px 8px; border:1px solid #ccc;" onclick="toggleMic()">🎤 マイク ON</button>
 			<button class="modal-btn" id="btn_mute_speaker" style="font-size:11px; padding:4px 8px; border:1px solid #ccc;" onclick="toggleSpeaker()">🔈 スピーカー ON</button>
 		</div>
-
 		<div><button class="modal-btn" style="background:#dc3545; color:#fff; width:100%; font-weight:bold; font-size:13px; padding:6px; border:1px solid #c82333; border-radius:4px; cursor:pointer;" onclick="leaveVoicha()">⏹ すぐ退出する</button></div>
 	</div>
 
@@ -225,8 +242,10 @@
 		let isMicMuted = false;
 		let isSpeakerMuted = false;
 		let amIBroadcaster = false; 
-		
 		let activeParticipants = {};
+		
+		let kmoniInterval = null;
+		let kmoniOffset = 2000;
 
 		let db, doc_ref, setDoc_ref, onSnapshot_ref, collection_ref, addDoc_ref, deleteDoc_ref, query_ref, where_ref, getDocs_ref, getDoc_ref;
 		let allBoardsCache = { 'main': [], 'game': [], 'music': [], 'memo': [] };
@@ -267,7 +286,7 @@
 						else { allBoardsCache[b] = []; }
 
 						if (b === currentBoard) {
-							cachedThreads = allBoardsCache[b];
+							cachedThreads = getValidThreads(allBoardsCache[b]); // ★ タイマー除外処理を通す
 							if (!justPosted) renderScreen();
 							else justPosted = false; 
 						}
@@ -282,6 +301,18 @@
 
 			initOekakiEvents();
 		};
+
+		// ★ タイマーで期限切れのスレッドを除外する関数
+		function getValidThreads(ths) {
+			const now = Date.now();
+			return ths.filter(t => {
+				if (t.rules && t.rules.timer) {
+					// 作成から1時間(3600000ms)経過していればリストから除外
+					if (now - t.id > 3600000) return false;
+				}
+				return true;
+			});
+		}
 
 		function getThreads() { return cachedThreads; }
 
@@ -298,13 +329,9 @@
 
 		function insertCommandTo(targetId, cmd) {
 			const el = document.getElementById(targetId);
-			if (el) {
-				el.value += (el.value.length > 0 && !el.value.endsWith('\n') ? '\n' : '') + cmd;
-				el.focus();
-			}
+			if (el) { el.value += (el.value.length > 0 && !el.value.endsWith('\n') ? '\n' : '') + cmd; el.focus(); }
 		}
 
-		// ★ ガチ位置情報取得API (OpenStreetMap Nominatim)
 		function getRealPrefecture() {
 			return new Promise((resolve) => {
 				if (!navigator.geolocation) { resolve('端末非対応'); return; }
@@ -323,6 +350,23 @@
 			});
 		}
 
+		function startKmoni() {
+			if(kmoniInterval) clearInterval(kmoniInterval);
+			kmoniOffset = 2000; 
+			kmoniInterval = setInterval(() => {
+				const imgEl = document.getElementById('kmoni_img');
+				if(!imgEl) { clearInterval(kmoniInterval); return; }
+				const d = new Date(Date.now() - kmoniOffset);
+				const yyyy = d.getFullYear(); const mm = ('0' + (d.getMonth() + 1)).slice(-2); const dd = ('0' + d.getDate()).slice(-2);
+				const hh = ('0' + d.getHours()).slice(-2); const min = ('0' + d.getMinutes()).slice(-2); const ss = ('0' + d.getSeconds()).slice(-2);
+				const url = `https://www.kmoni.bosai.go.jp/data/map_img/RealTimeImg/jma_s/${yyyy}${mm}${dd}/${yyyy}${mm}${dd}${hh}${min}${ss}.jma_s.gif`;
+				const tempImg = new Image();
+				tempImg.onload = () => { imgEl.src = url; };
+				tempImg.onerror = () => { kmoniOffset += 1000; if(kmoniOffset > 60000) kmoniOffset = 2000; };
+				tempImg.src = url;
+			}, 1000);
+		}
+
 		// ==========================================
 		// UI描画処理
 		// ==========================================
@@ -330,7 +374,7 @@
 			if(currentThreadId) return; 
 			let all = [];
 			Object.keys(boardTitles).forEach(b => {
-				const ths = allBoardsCache[b]; 
+				const ths = getValidThreads(allBoardsCache[b]);
 				ths.forEach(t => t.posts.forEach((p, i) => all.push({ b: b, bn: boardTitles[b], tid: t.id, tt: t.title, pi: i+1, msg: p.msg, time: p.time, rc: t.posts.length, v: t.voicha })));
 			});
 			all.sort((a, b) => b.time.localeCompare(a.time));
@@ -340,13 +384,8 @@
 				let s = tmp.textContent || ""; if (s.length > 50) s = s.substring(0, 50) + '...';
 				const d = p.time.split(' ');
 				const t = (new Date().getFullYear().toString().slice(-2) + '/' + ('0'+(new Date().getMonth()+1)).slice(-2) + '/' + ('0'+new Date().getDate()).slice(-2) === d[0].substring(0,8)) ? d[1] : d[0].substring(0,8);
-				
 				let wf = '';
-				if (p.v) {
-					if (p.v.status === 'waiting') wf = '🙇‍♂️配信求む！ ';
-					else wf = '📶 ';
-				}
-				
+				if (p.v) { if (p.v.status === 'waiting') wf = '🙇‍♂️配信求む！ '; else wf = '📶 '; }
 				html += `<div class="hl-item"><div><span class="hl-meta">${t}</span> <a href="?board=${p.b}&thread=${p.tid}" class="hl-title">【${p.bn}】${wf}${escapeHtml(p.tt)} (${p.rc})</a></div><div class="hl-snippet">&gt;&gt;${p.pi} ${escapeHtml(s)}</div></div>`;
 			});
 			document.getElementById('headline_content').innerHTML = html || '<div style="padding:10px; color:#666;">まだ書き込みはありません。</div>'; 
@@ -361,32 +400,49 @@
 			const ths = getThreads(); const ca = document.getElementById('main_content_area');
 			if (currentThreadId) {
 				const th = ths.find(t => t.id == currentThreadId);
-				if (!th) { ca.innerHTML = '<div class="bbs_box"><div class="bbs_body" style="color:red;">スレッドが削除されたか存在しません。</div></div>'; return; }
+				// タイマーで消滅したか、存在しない場合
+				if (!th) { ca.innerHTML = '<div class="bbs_box"><div class="bbs_body" style="color:red; font-weight:bold;">このスレッドは削除されたか、時間制限により消滅しました。</div></div>'; return; }
 				document.getElementById('board_header_area').style.display = 'none'; document.getElementById('create_thread_area').style.display = 'none';
 				
 				let wf = '';
-				if (th.voicha) {
-					if (th.voicha.status === 'waiting') wf = '🙇‍♂️配信求む！ ';
-					else wf = '📶 ';
+				if (th.voicha) { if (th.voicha.status === 'waiting') wf = '🙇‍♂️配信求む！ '; else wf = '📶 '; }
+				
+				let kmoniHtml = '';
+				if (th.title.includes('地震')) {
+					kmoniHtml = `
+					<div style="background:#222; padding:10px; border-radius:4px; margin-bottom:15px; text-align:center; border: 2px solid #555;">
+						<div style="color:#0f0; font-weight:bold; margin-bottom:5px; font-size:14px;">🔴 リアルタイム地震モニター (強震モニタ)</div>
+						<div style="position:relative; width:100%; max-width:352px; height:400px; margin:0 auto; background:#000;">
+							<img src="https://www.kmoni.bosai.go.jp/data/map_img/bousai_base/bousai_base.png" style="position:absolute; top:0; left:0; width:100%; height:100%;">
+							<img id="kmoni_img" src="" style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:2;">
+						</div>
+						<div style="font-size:10px; color:#888; margin-top:5px;">※防災科学技術研究所の画像データを使用しています</div>
+					</div>`;
+				}
+				
+				// ★ 将棋スレUI
+				let syogiHtml = '';
+				if (th.rules && th.rules.syogi) {
+					syogiHtml = `<div style="background:#fff; border:1px solid #ccc; padding:10px; text-align:center; margin-bottom:15px;">
+						<div style="font-weight:bold; color:#d9534f; margin-bottom:5px;">♟️ 将棋スレ用盤面（SDIN無料ゲーム）</div>
+						<iframe src="https://sdin.jp/browser/board/shogi/" width="100%" height="650" frameborder="0" style="max-width:800px; border:1px solid #eee;"></iframe>
+					</div>`;
 				}
 				
 				let html = `<div class="ch2-wrapper">
 					<div class="ch2-nav"><a href="?board=${currentBoard}">[板に戻る]</a><a href="#">全部</a> <a href="#">最新50</a> <a href="#">まとめる</a> | <a href="#">設定</a> | <a href="#">履歴</a><br>前 次 <a href="#">1-</a></div>
 					<div class="ch2-search"><a href="#" onclick="showImageGallery(); return false;" style="font-weight:bold;">画像一覧</a>　<input type="text" placeholder="キーワード入力" size="20"><button style="font-size:12px; padding:1px 6px;">スレ内検索</button></div>
 					<hr style="border:0; border-top:1px solid #ccc; margin:10px 0;">
+					${kmoniHtml}
+					${syogiHtml}
 					<div class="ch2-title">${wf}${escapeHtml(th.title)} (${th.posts.length})</div>`;
 				
 				if (th.voicha) {
-					let vtext = '';
-					let isWaiting = th.voicha.status === 'waiting';
-					let statusText = isWaiting ? '（配信求む！）' : '配信中';
-					
+					let vtext = ''; let isWaiting = th.voicha.status === 'waiting'; let statusText = isWaiting ? '（配信求む！）' : '配信中';
 					if (th.voicha.limit === 1) vtext = `※ひとらじ${statusText}（スレ主のみ）`;
 					else if (th.voicha.limit) vtext = `※ぬとらじ${statusText}（上限${th.voicha.limit}人）`;
 					else vtext = `※ぬとらじ${statusText}（参加自由）`;
-					
 					let bannerStyle = isWaiting ? "background-color:#e2e3e5; color:#383d41; border-color:#d6d8db;" : "background-color:#fff3cd; color:#856404; border-color:#ffeeba;";
-					
 					html += `<div class="voicha-banner" style="${bannerStyle}">
 						<span>${vtext}</span>
 						<div class="voicha-buttons">
@@ -397,6 +453,10 @@
 				}
 
 				let wClass = isHideOwnerMode ? 'hide-owner-mode' : '';
+				
+				// ★ ドット強制
+				if (th.rules && th.rules.dot) wClass += ' font-dot';
+				
 				html += `<div id="post_list_wrapper" class="${wClass}">`;
 				
 				if (!showAllPostsMode && th.posts.length > 50) html += `<div style="text-align:center; margin-bottom:20px; padding:10px;"><button class="modal-btn" style="background:#fff; color:#0056b3; border: 1px solid #0056b3; cursor:pointer;" onclick="showAllPostsMode = true; renderScreen();">🔃 前のレスを取得（全 ${th.posts.length} レス表示）</button></div>`;
@@ -405,12 +465,21 @@
 				th.posts.forEach((p, i) => {
 					if (!showAllPostsMode && th.posts.length > 50 && i > 0 && i < th.posts.length - 49) return;
 					const mLink = p.email ? `<a href="mailto:${escapeHtml(p.email)}" class="ch2-name">${escapeHtml(p.name)}</a>` : `<span class="ch2-name">${escapeHtml(p.name)}</span>`;
-					const dId = p.id || getDailyId(); const om = ((dId === sid) && !p.hideOwner) ? `<span class="ch2-owner-mark">[主]</span>` : '';
-					let cls = ((dId === sid) && i > 0) ? ' owner-reply' : ''; if (anim && i === th.posts.length - 1) cls += ' new-post';
+					
+					// ★ !no_id 判定（VIP等以外）
+					let isNoIdBoard = (currentBoard === 'main' || currentBoard === 'game' || currentBoard === 'memo');
+					let displayId = p.id || getDailyId();
+					if (th.rules && th.rules.no_id && !isNoIdBoard) {
+						displayId = '???';
+					}
+
+					const om = ((displayId === sid) && !p.hideOwner && displayId !== '???') ? `<span class="ch2-owner-mark">[主]</span>` : '';
+					let cls = ((displayId === sid) && i > 0 && displayId !== '???') ? ' owner-reply' : ''; if (anim && i === th.posts.length - 1) cls += ' new-post';
 					let img = p.image ? `<a href="${p.image}" target="_blank"><img src="${p.image}" class="ch2-post-image"></a>` : '';
 					let aud = p.audio ? `<br><audio controls src="${p.audio}" style="height:35px;"></audio>` : '';
 					let map = p.map ? `<br><iframe width="100%" height="200" src="https://www.openstreetmap.org/export/embed.html?bbox=${p.map.lng-0.005},${p.map.lat-0.005},${p.map.lng+0.005},${p.map.lat+0.005}&amp;layer=mapnik&amp;marker=${p.map.lat},${p.map.lng}" style="border: 1px solid #ccc; margin-top: 10px; max-width: 400px;"></iframe>` : '';
-					html += `<div class="ch2-post${cls}"><div class="ch2-header">${i + 1} ：${mLink} ：${p.time} ID:${dId}${om}</div><div class="ch2-body">${img}${p.msg}${aud}${map}</div></div>`;
+					
+					html += `<div class="ch2-post${cls}"><div class="ch2-header">${i + 1} ：${mLink} ：${p.time} ID:${displayId}${om}</div><div class="ch2-body">${img}${p.msg}${aud}${map}</div></div>`;
 				});
 
 				let cbChecked = isHideOwnerMode ? 'checked' : '';
@@ -421,9 +490,10 @@
 					
 					<div class="command-bar">
 						<span style="font-size:11px; color:#666;">コマンド：</span>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('reply_msg', '!add !sage')">➕強制sage</button>
+						<button type="button" class="cmd-btn" onclick="insertCommandTo('reply_msg', '!add !dot')">➕👾ドット</button>
+						<span style="font-size:11px; color:#666; margin-left:10px;">通常：</span>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('reply_msg', '!voicha')">📶ぬとらじ</button>
-						<button type="button" class="cmd-btn" onclick="insertCommandTo('reply_msg', '!voicha:4')">📶ぬとらじ(4人)</button>
-						<button type="button" class="cmd-btn" onclick="insertCommandTo('reply_msg', '!voicha:1')">📶ひとらじ</button>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('reply_msg', '!kuji')">🎲おみくじ</button>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('reply_msg', '!dama')">🧧お年玉</button>
 					</div>
@@ -435,7 +505,12 @@
 
 				if (hasSavedInput) { document.getElementById('reply_name').value = tmpName; document.getElementById('reply_email').value = tmpEmail; document.getElementById('reply_msg').value = tmpMsg; }
 				if (anim) setTimeout(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }, 50);
+				
+				if (th.title.includes('地震')) { setTimeout(startKmoni, 100); } 
+				else if (kmoniInterval) { clearInterval(kmoniInterval); }
+
 			} else {
+				if (kmoniInterval) clearInterval(kmoniInterval); 
 				if (ths.length === 0) { ca.innerHTML = '<div style="text-align:center;">スレッドがありません。</div>'; return; }
 				let html = '<ul class="thread_list">'; ths.forEach((t, i) => { 
 					let wf = '';
@@ -514,9 +589,60 @@
 			let ths = getThreads(); let isNewThread = !currentThreadId; let targetThreadIndex = -1;
 			let threadTitle = iTitle || '';
 			
+			// ★ ルールの抽出と初期化
+			let rules = { no_id: false, sage: false, oekaki: false, syogi: false, moji3: false, kanji: false, hankaku: false, sugi: false, hakata: false, osaka: false, hira: false, kana: false, dot: false, max: 0, timer: false, kote: false };
+
 			if (!isNewThread) {
 				targetThreadIndex = ths.findIndex(t => t.id == currentThreadId);
-				if (targetThreadIndex !== -1) threadTitle = ths[targetThreadIndex].title;
+				if (targetThreadIndex !== -1) {
+					threadTitle = ths[targetThreadIndex].title;
+					rules = ths[targetThreadIndex].rules || rules;
+				}
+			}
+
+			// 新規スレ立て時のルール解析
+			if (isNewThread) {
+				let tTitle = iTitle.trim();
+				if (tTitle.includes('!no_id')) rules.no_id = true;
+				if (tTitle.includes('!sage') || rawMsg.includes('!sage')) rules.sage = true;
+				if (tTitle.includes('!oekaki')) rules.oekaki = true;
+				if (tTitle.includes('!syogi') || tTitle.includes('!将棋')) rules.syogi = true;
+				if (tTitle.includes('!moji3')) rules.moji3 = true;
+				if (tTitle.includes('!kanji')) rules.kanji = true;
+				if (tTitle.includes('!hankaku')) rules.hankaku = true;
+				if (tTitle.includes('!sugi')) rules.sugi = true;
+				if (tTitle.includes('!hakata')) rules.hakata = true;
+				if (tTitle.includes('!osaka')) rules.osaka = true;
+				if (tTitle.includes('!hira')) rules.hira = true;
+				if (tTitle.includes('!kana')) rules.kana = true;
+				if (tTitle.includes('!dot') || rawMsg.includes('!dot')) rules.dot = true;
+				if (tTitle.includes('!timer')) rules.timer = true;
+				if (tTitle.includes('!kote')) rules.kote = true;
+				
+				let maxMatch = tTitle.match(/!max(\d{2,3})/);
+				if (maxMatch) {
+					let maxVal = parseInt(maxMatch[1], 10);
+					if (maxVal >= 10 && maxVal <= 999) rules.max = maxVal;
+				}
+			} else {
+				// 既存スレへの!add処理
+				if (rawMsg.includes('!add')) {
+					if (rawMsg.includes('!sage')) rules.sage = true;
+					if (rawMsg.includes('!dot')) rules.dot = true;
+				}
+			}
+
+			// ★ バリデーション（書き込み制限）
+			if (rules.oekaki) {
+				if (!iBase64) { alert("【お絵描き限定スレ】画像を添付してください。"); return; }
+				if (rawMsg.includes('\n')) { alert("【お絵描き限定スレ】コメントは1行のみです！"); return; }
+			}
+			if (rules.moji3 && rawMsg.length > 3) { alert("【3文字限定スレ】3文字以内で書き込んでください。"); return; }
+			if (rules.kanji && /[A-Za-z0-9ぁ-んァ-ヶｱ-ﾝﾞﾟ]/.test(rawMsg)) { alert("【漢字限定スレ】漢字のみで書き込んでください。"); return; }
+			if (rules.hankaku && /[^\x20-\x7E\uFF61-\uFF9F]/.test(rawMsg)) { alert("【半角限定スレ】半角英数字で書き込んでください。"); return; }
+			if (rules.kote && (!iName.trim() || iName.startsWith('名無しさん'))) { alert("【コテ限定スレ】名前欄に入力してください。"); return; }
+			if (rules.max > 0 && !isNewThread) {
+				if (ths[targetThreadIndex].posts.length >= rules.max) { alert(`このスレッドは最大レス数(${rules.max})に到達しました！`); return; }
 			}
 
 			// ★ 地震スレ判定（ガチ位置情報取得）
@@ -531,7 +657,17 @@
 				iName = `名無しさん＠${myPref}`;
 			}
 			
-			let parsedMsg = escapeHtml(rawMsg);
+			// ★ テキスト変換処理
+			let tmpMsg = rawMsg;
+			if (rules.sugi) tmpMsg = tmpMsg.replace(/です/g, 'だぜぇ').replace(/ます/g, 'だぜぇ').replace(/。/g, 'ワイルドだろぉ？');
+			if (rules.hakata) tmpMsg = tmpMsg.replace(/だから/g, 'やけん').replace(/だよね/g, 'たいね').replace(/だ/g, 'ばい');
+			if (rules.osaka) tmpMsg = tmpMsg.replace(/だから/g, 'やから').replace(/だよね/g, 'やんな').replace(/だ/g, 'や').replace(/ない/g, 'へん');
+			if (rules.hira) tmpMsg = tmpMsg.replace(/[\u30a1-\u30f6]/g, m => String.fromCharCode(m.charCodeAt(0) - 0x60));
+			if (rules.kana) tmpMsg = tmpMsg.replace(/[\u3041-\u3096]/g, m => String.fromCharCode(m.charCodeAt(0) + 0x60));
+
+			let parsedMsg = escapeHtml(tmpMsg);
+			
+			// 既存の変換処理
 			parsedMsg = parsedMsg.replace(/fusianasan/g, () => '<span style="color:#888; font-size:11px;">[IP非記録]</span>');
 			parsedMsg = parsedMsg.replace(/!kuji/g, () => { const k = ['<span style="color:red;font-weight:bold;">【大吉】</span>','【吉】','【中吉】','【小吉】','【末吉】','【凶】','<span style="color:blue;font-weight:bold;">【大凶】</span>']; return k[Math.floor(Math.random()*k.length)]; });
 			parsedMsg = parsedMsg.replace(/!dama/g, () => '【' + Math.floor(Math.random()*10000) + '円】');
@@ -572,11 +708,23 @@
 			const nPost = { name: iName.trim() || '名無しさん', email: iEmail.trim(), msg: parsedMsg, time: get2chTimeFormat(), id: dailyId, hideOwner: hOwner };
 			if (iBase64) nPost.image = iBase64; if (aBase64) nPost.audio = aBase64; if (mData) nPost.map = mData; 
 
+			// ★ sage判定
+			const isSage = (iEmail.trim().toLowerCase() === 'sage') || rules.sage;
+
 			if (!isNewThread && targetThreadIndex !== -1) { 
-				ths[targetThreadIndex].posts.push(nPost); const act = ths.splice(targetThreadIndex, 1)[0]; ths.unshift(act); 
+				ths[targetThreadIndex].posts.push(nPost); 
+				ths[targetThreadIndex].rules = rules; // ルール更新
+				const act = ths.splice(targetThreadIndex, 1)[0]; 
+				
+				if (!isSage) {
+					ths.unshift(act); // 上げる
+				} else {
+					ths.splice(targetThreadIndex, 0, act); // そのままの位置（sage）
+				}
 			} else { 
-				let initObj = { id: new Date().getTime(), title: iTitle.trim() || '無題', posts: [nPost], akuList: [] };
-				if (isVoichaTriggered) initObj.voicha = newVoicha; ths.unshift(initObj); 
+				let initObj = { id: new Date().getTime(), title: iTitle.trim() || '無題', posts: [nPost], akuList: [], rules: rules };
+				if (isVoichaTriggered) initObj.voicha = newVoicha; 
+				ths.unshift(initObj); 
 			}
 			
 			try { await setDoc_ref(doc_ref(db, "bbs_data", currentBoard), { data: JSON.stringify(ths) }); } 

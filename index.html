@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>個人用マルチ掲示板（外部地震モニター埋め込み版）</title>
+	<title>個人用マルチ掲示板（アンケート・投票機能 版）</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<style>
@@ -163,7 +163,7 @@
 			<div class="bbs_body">
 				<div class="form-title">新規スレッド作成</div>
 				<form onsubmit="submitForm(event)">
-					<div style="margin-bottom: 10px;"><label>タイトル：</label><br><input type="text" id="bbs_dai" style="width: 100%; max-width: 400px;" placeholder="例：!sage !no_id !oekaki !dot などのコマンド"/></div>
+					<div style="margin-bottom: 10px;"><label>タイトル：</label><br><input type="text" id="bbs_dai" style="width: 100%; max-width: 400px;" placeholder="例：!vote[きのこ,たけのこ]"/></div>
 					<div style="margin-bottom: 10px; display: flex; gap: 15px; flex-wrap: wrap; align-items: center;">
 						<div><label>名前：</label><br><input type="text" id="bbs_name" value="名無しさん" style="width:150px;"/></div>
 						<div><label>E-mail：</label><br><input type="text" id="bbs_email" placeholder="sage" style="width:150px;" /></div>
@@ -173,6 +173,7 @@
 					
 					<div class="command-bar">
 						<span style="font-size:11px; color:#666;">特殊：</span>
+						<button type="button" class="cmd-btn" style="background:#ffebcd; border-color:#e5cd86;" onclick="insertCommandTo('bbs_dai', '!vote[きのこ,たけのこ,その他]')">📊投票</button>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!no_id')">🆔無</button>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!sage')">⬇️強制sage</button>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!oekaki')">🎨絵限定</button>
@@ -335,7 +336,7 @@
 			<button class="btn-primary" id="btn_mute_speaker" style="font-size:11px; padding:3px 6px;" onclick="toggleSpeaker()">🔈 スピーカーON</button>
 		</div>
 
-		<div><button class="btn-primary" style="width:100%; font-weight:bold; font-size:12px; padding:4px;" onclick="leaveVoicha()">⏹ すぐ退出する</button></div>
+		<div><button class="btn-primary" style="width:100%; font-weight:bold; font-size:12px; padding:4px; background:#dc3545; color:#fff; border-color:#c82333;" onclick="leaveVoicha()">⏹ すぐ退出する</button></div>
 	</div>
 
 	<div id="voicha_audio_container" style="display:none;"></div>
@@ -564,22 +565,36 @@
 			if (el) { el.value += (el.value.length > 0 && !el.value.endsWith('\n') ? '\n' : '') + cmd; el.focus(); }
 		}
 
-		function getRealPrefecture() {
-			return new Promise((resolve) => {
-				if (!navigator.geolocation) { resolve('端末非対応'); return; }
-				navigator.geolocation.getCurrentPosition(
-					async (p) => {
-						try {
-							const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${p.coords.latitude}&lon=${p.coords.longitude}&accept-language=ja`);
-							const data = await res.json();
-							let pref = data.address.province || data.address.state || data.address.region || '不明';
-							resolve(pref);
-						} catch(e) { resolve('取得エラー'); }
-					},
-					(err) => { resolve('位置情報拒否'); },
-					{ timeout: 10000 }
-				);
-			});
+		// ★ 投票処理
+		async function submitVote(threadId, optIndex) {
+			let ths = getThreads();
+			let thIdx = ths.findIndex(t => t.id == threadId);
+			if(thIdx === -1) return;
+			
+			let th = ths[thIdx];
+			if(!th.poll) return;
+			
+			let myId = getDailyId();
+			if(!th.poll.votedUsers) th.poll.votedUsers = [];
+			if(th.poll.votedUsers.includes(myId)) {
+				alert("すでに投票済みです。");
+				return;
+			}
+			
+			th.poll.options[optIndex].count++;
+			th.poll.votedUsers.push(myId);
+			
+			document.body.style.cursor = 'wait';
+			try {
+				let act = ths.splice(thIdx, 1)[0]; 
+				ths.splice(thIdx, 0, act); // 位置はそのまま
+				await setDoc_ref(doc_ref(db, "bbs_data", currentBoard), { data: JSON.stringify(ths) });
+				renderScreen(false);
+			} catch(e) {
+				alert("通信エラーが発生しました。");
+			} finally {
+				document.body.style.cursor = 'default';
+			}
 		}
 
 		// ==========================================
@@ -645,12 +660,48 @@
 					</div>`;
 				}
 				
+				// ★ アンケートUI
+				let pollHtml = '';
+				if (th.poll) {
+					let totalVotes = th.poll.options.reduce((sum, opt) => sum + opt.count, 0);
+					let myId = getDailyId();
+					let hasVoted = th.poll.votedUsers && th.poll.votedUsers.includes(myId);
+					
+					pollHtml += `<div style="background:#f8f9fa; border:1px solid #ddd; padding:15px; margin-bottom:15px; border-radius:6px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+						<div style="font-weight:bold; font-size:15px; margin-bottom:12px; color:#333; display:flex; align-items:center; gap:5px;"><span>📊</span> みんなのアンケート (計${totalVotes}票)</div>`;
+						
+					th.poll.options.forEach((opt, idx) => {
+						let pct = totalVotes > 0 ? Math.round((opt.count / totalVotes) * 100) : 0;
+						pollHtml += `<div style="margin-bottom:10px;">
+							<div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:13px; font-weight:bold; color:#444;">
+								<span>${escapeHtml(opt.text)}</span>
+								<span>${opt.count}票 (${pct}%)</span>
+							</div>
+							<div style="display:flex; align-items:center; gap:10px;">
+								<div style="background:#e9ecef; height:12px; border-radius:6px; overflow:hidden; flex-grow:1; border:1px solid #ccc;">
+									<div style="background:linear-gradient(90deg, #4a90e2, #63a4ff); height:100%; width:${pct}%; transition:width 0.4s;"></div>
+								</div>`;
+						if (!hasVoted) {
+							pollHtml += `<button class="btn-primary" style="font-size:11px; padding:3px 10px; margin:0;" onclick="submitVote('${th.id}', ${idx})">投票</button>`;
+						}
+						pollHtml += `</div></div>`;
+					});
+					
+					if (hasVoted) {
+						pollHtml += `<div style="color:#28a745; font-size:12px; font-weight:bold; margin-top:12px; text-align:center;">✓ 投票済みです</div>`;
+					} else {
+						pollHtml += `<div style="color:#666; font-size:11px; margin-top:12px; text-align:center;">※1人1回まで投票できます</div>`;
+					}
+					pollHtml += `</div>`;
+				}
+				
 				let html = `<div class="ch2-wrapper">
 					<div class="ch2-nav"><a href="?board=${currentBoard}">[板に戻る]</a><a href="#">全部</a> <a href="#">最新50</a> <a href="#">まとめる</a> | <a href="#" onclick="openSettings(); return false;">設定</a> | <a href="#">履歴</a><br>前 次 <a href="#">1-</a></div>
 					<div class="ch2-search"><a href="#" onclick="showImageGallery(); return false;" style="font-weight:bold;">画像一覧</a>　<input type="text" placeholder="キーワード入力" size="20"><button style="font-size:12px; padding:4px 6px;">スレ内検索</button></div>
 					<hr style="border:0; border-top:1px solid #ccc; margin:10px 0;">
 					${kmoniHtml}
 					${syogiHtml}
+					${pollHtml}
 					<div class="ch2-title">${wf}${escapeHtml(th.title)} (${th.posts.length})</div>`;
 				
 				if (th.voicha) {
@@ -809,6 +860,7 @@
 			let threadTitle = iTitle || '';
 			
 			let rules = { no_id: false, sage: false, oekaki: false, syogi: false, moji3: false, kanji: false, hankaku: false, sugi: false, hakata: false, osaka: false, hira: false, kana: false, dot: false, kote: false };
+			let pollData = null;
 
 			if (!isNewThread) {
 				targetThreadIndex = ths.findIndex(t => t.id == currentThreadId);
@@ -820,6 +872,21 @@
 
 			if (isNewThread) {
 				let tTitle = iTitle.trim();
+				
+				// ★ アンケート設定
+				let voteMatch = tTitle.match(/!vote\[(.*?)\]/);
+				if (voteMatch) {
+					let opts = voteMatch[1].split(',').map(s => s.trim()).filter(s => s);
+					if(opts.length > 0) {
+						pollData = {
+							options: opts.map(o => ({ text: o, count: 0 })),
+							votedUsers: []
+						};
+					}
+					tTitle = tTitle.replace(voteMatch[0], '').trim();
+					if(!tTitle) tTitle = "アンケートスレ";
+				}
+				
 				if (tTitle.includes('!no_id')) rules.no_id = true;
 				if (tTitle.includes('!sage') || rawMsg.includes('!sage')) rules.sage = true;
 				if (tTitle.includes('!oekaki')) rules.oekaki = true;
@@ -834,6 +901,8 @@
 				if (tTitle.includes('!kana')) rules.kana = true;
 				if (tTitle.includes('!dot') || rawMsg.includes('!dot')) rules.dot = true;
 				if (tTitle.includes('!kote')) rules.kote = true;
+				
+				iTitle = tTitle;
 			} else {
 				if (rawMsg.includes('!add')) {
 					if (rawMsg.includes('!sage')) rules.sage = true;
@@ -929,6 +998,7 @@
 			} else { 
 				let initObj = { id: new Date().getTime(), title: iTitle.trim() || '無題', posts: [nPost], akuList: [], rules: rules };
 				if (isVoichaTriggered) initObj.voicha = newVoicha; 
+				if (pollData) initObj.poll = pollData; // アンケート追加
 				ths.unshift(initObj); 
 			}
 			

@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>個人用マルチ掲示板（特殊ローカルルール・スレタイコマンド完全対応版）</title>
+	<title>個人用マルチ掲示板（コマンド整理版）</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<style>
@@ -121,7 +121,7 @@
 			<div class="bbs_body">
 				<div class="form-title">新規スレッド作成</div>
 				<form onsubmit="submitForm(event)">
-					<div style="margin-bottom: 10px;"><label>タイトル：</label><br><input type="text" id="bbs_dai" style="width: 100%; max-width: 400px;" placeholder="例：!sage !no_id !oekaki !timer !dot などのコマンド"/></div>
+					<div style="margin-bottom: 10px;"><label>タイトル：</label><br><input type="text" id="bbs_dai" style="width: 100%; max-width: 400px;" placeholder="例：!sage !no_id !oekaki !dot などのコマンド"/></div>
 					<div style="margin-bottom: 10px; display: flex; gap: 15px; flex-wrap: wrap; align-items: center;">
 						<div><label>名前：</label><br><input type="text" id="bbs_name" value="名無しさん" style="width:150px;"/></div>
 						<div><label>E-mail：</label><br><input type="text" id="bbs_email" placeholder="sage" style="width:150px;" /></div>
@@ -144,9 +144,7 @@
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!hira')">あ</button>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!kana')">ア</button>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!dot')">👾ドット</button>
-						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!timer')">⏱️1時間</button>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!kote')">🛡️コテ限</button>
-						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!max10')">🔒上限10</button>
 						<span style="font-size:11px; color:#666; margin-left:10px;">通常：</span>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_msg', '!voicha')">📶ぬとらじ</button>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_msg', '!voicha:4')">📶ぬとらじ(4人)</button>
@@ -163,6 +161,7 @@
 	</div>
 
 	<div id="api_settings_modal" class="modal-overlay"><div class="modal-box"><div style="font-weight:bold; font-size:16px; margin-bottom:15px;">⚙️ 外部API設定</div><input type="password" id="api_key_input" style="width:100%; padding:5px; margin-bottom:15px;" placeholder="sk-..."><button class="modal-btn" onclick="closeApiSettings()">キャンセル</button> <button class="modal-btn" style="background:#4a90e2; color:#fff;" onclick="saveApiSettings()">保存する</button></div></div>
+	
 	<div id="image_gallery_modal" class="modal-overlay" style="align-items: flex-start;"><div style="width:100%;"><div class="modal-header"><span class="modal-close" onclick="closeImageGallery()">✖ 閉じる</span></div><div class="modal-content" id="gallery_content"></div></div></div>
 	
 	<div id="oekaki_modal" class="modal-overlay">
@@ -213,15 +212,19 @@
 			<button class="modal-btn" id="btn_refresh_participants" style="font-size:10px; padding:3px 6px; cursor:pointer;" onclick="refreshParticipants()">🔄 更新</button>
 		</div>
 		<div id="voicha_live_status" style="margin-bottom: 10px; font-size:11px; color:#555; text-align:center;">システムに接続中...</div>
+		
 		<div id="voicha_participants_list"></div>
+		
 		<div id="voicha_mic_bar_wrapper" style="margin-bottom:15px; display:none;">
 			<div style="font-size:10px; color:#666; text-align:center;">あなたの声量：</div>
 			<div class="live-mic-bar" id="voicha_mic_bar"><div id="voicha_mic_level" class="live-mic-level"></div></div>
 		</div>
+		
 		<div style="margin-bottom: 12px; display:flex; justify-content:center; gap:5px;" id="voicha_control_buttons">
 			<button class="modal-btn" id="btn_mute_mic" style="display:none; font-size:11px; padding:4px 8px; border:1px solid #ccc;" onclick="toggleMic()">🎤 マイク ON</button>
 			<button class="modal-btn" id="btn_mute_speaker" style="font-size:11px; padding:4px 8px; border:1px solid #ccc;" onclick="toggleSpeaker()">🔈 スピーカー ON</button>
 		</div>
+
 		<div><button class="modal-btn" style="background:#dc3545; color:#fff; width:100%; font-weight:bold; font-size:13px; padding:6px; border:1px solid #c82333; border-radius:4px; cursor:pointer;" onclick="leaveVoicha()">⏹ すぐ退出する</button></div>
 	</div>
 
@@ -286,7 +289,7 @@
 						else { allBoardsCache[b] = []; }
 
 						if (b === currentBoard) {
-							cachedThreads = getValidThreads(allBoardsCache[b]); // ★ タイマー除外処理を通す
+							cachedThreads = allBoardsCache[b]; 
 							if (!justPosted) renderScreen();
 							else justPosted = false; 
 						}
@@ -301,18 +304,6 @@
 
 			initOekakiEvents();
 		};
-
-		// ★ タイマーで期限切れのスレッドを除外する関数
-		function getValidThreads(ths) {
-			const now = Date.now();
-			return ths.filter(t => {
-				if (t.rules && t.rules.timer) {
-					// 作成から1時間(3600000ms)経過していればリストから除外
-					if (now - t.id > 3600000) return false;
-				}
-				return true;
-			});
-		}
 
 		function getThreads() { return cachedThreads; }
 
@@ -374,7 +365,7 @@
 			if(currentThreadId) return; 
 			let all = [];
 			Object.keys(boardTitles).forEach(b => {
-				const ths = getValidThreads(allBoardsCache[b]);
+				const ths = allBoardsCache[b];
 				ths.forEach(t => t.posts.forEach((p, i) => all.push({ b: b, bn: boardTitles[b], tid: t.id, tt: t.title, pi: i+1, msg: p.msg, time: p.time, rc: t.posts.length, v: t.voicha })));
 			});
 			all.sort((a, b) => b.time.localeCompare(a.time));
@@ -400,8 +391,7 @@
 			const ths = getThreads(); const ca = document.getElementById('main_content_area');
 			if (currentThreadId) {
 				const th = ths.find(t => t.id == currentThreadId);
-				// タイマーで消滅したか、存在しない場合
-				if (!th) { ca.innerHTML = '<div class="bbs_box"><div class="bbs_body" style="color:red; font-weight:bold;">このスレッドは削除されたか、時間制限により消滅しました。</div></div>'; return; }
+				if (!th) { ca.innerHTML = '<div class="bbs_box"><div class="bbs_body" style="color:red; font-weight:bold;">このスレッドは削除されたか、存在しません。</div></div>'; return; }
 				document.getElementById('board_header_area').style.display = 'none'; document.getElementById('create_thread_area').style.display = 'none';
 				
 				let wf = '';
@@ -420,7 +410,6 @@
 					</div>`;
 				}
 				
-				// ★ 将棋スレUI
 				let syogiHtml = '';
 				if (th.rules && th.rules.syogi) {
 					syogiHtml = `<div style="background:#fff; border:1px solid #ccc; padding:10px; text-align:center; margin-bottom:15px;">
@@ -453,8 +442,6 @@
 				}
 
 				let wClass = isHideOwnerMode ? 'hide-owner-mode' : '';
-				
-				// ★ ドット強制
 				if (th.rules && th.rules.dot) wClass += ' font-dot';
 				
 				html += `<div id="post_list_wrapper" class="${wClass}">`;
@@ -466,7 +453,6 @@
 					if (!showAllPostsMode && th.posts.length > 50 && i > 0 && i < th.posts.length - 49) return;
 					const mLink = p.email ? `<a href="mailto:${escapeHtml(p.email)}" class="ch2-name">${escapeHtml(p.name)}</a>` : `<span class="ch2-name">${escapeHtml(p.name)}</span>`;
 					
-					// ★ !no_id 判定（VIP等以外）
 					let isNoIdBoard = (currentBoard === 'main' || currentBoard === 'game' || currentBoard === 'memo');
 					let displayId = p.id || getDailyId();
 					if (th.rules && th.rules.no_id && !isNoIdBoard) {
@@ -589,8 +575,7 @@
 			let ths = getThreads(); let isNewThread = !currentThreadId; let targetThreadIndex = -1;
 			let threadTitle = iTitle || '';
 			
-			// ★ ルールの抽出と初期化
-			let rules = { no_id: false, sage: false, oekaki: false, syogi: false, moji3: false, kanji: false, hankaku: false, sugi: false, hakata: false, osaka: false, hira: false, kana: false, dot: false, max: 0, timer: false, kote: false };
+			let rules = { no_id: false, sage: false, oekaki: false, syogi: false, moji3: false, kanji: false, hankaku: false, sugi: false, hakata: false, osaka: false, hira: false, kana: false, dot: false, kote: false };
 
 			if (!isNewThread) {
 				targetThreadIndex = ths.findIndex(t => t.id == currentThreadId);
@@ -600,7 +585,6 @@
 				}
 			}
 
-			// 新規スレ立て時のルール解析
 			if (isNewThread) {
 				let tTitle = iTitle.trim();
 				if (tTitle.includes('!no_id')) rules.no_id = true;
@@ -616,23 +600,14 @@
 				if (tTitle.includes('!hira')) rules.hira = true;
 				if (tTitle.includes('!kana')) rules.kana = true;
 				if (tTitle.includes('!dot') || rawMsg.includes('!dot')) rules.dot = true;
-				if (tTitle.includes('!timer')) rules.timer = true;
 				if (tTitle.includes('!kote')) rules.kote = true;
-				
-				let maxMatch = tTitle.match(/!max(\d{2,3})/);
-				if (maxMatch) {
-					let maxVal = parseInt(maxMatch[1], 10);
-					if (maxVal >= 10 && maxVal <= 999) rules.max = maxVal;
-				}
 			} else {
-				// 既存スレへの!add処理
 				if (rawMsg.includes('!add')) {
 					if (rawMsg.includes('!sage')) rules.sage = true;
 					if (rawMsg.includes('!dot')) rules.dot = true;
 				}
 			}
 
-			// ★ バリデーション（書き込み制限）
 			if (rules.oekaki) {
 				if (!iBase64) { alert("【お絵描き限定スレ】画像を添付してください。"); return; }
 				if (rawMsg.includes('\n')) { alert("【お絵描き限定スレ】コメントは1行のみです！"); return; }
@@ -641,11 +616,7 @@
 			if (rules.kanji && /[A-Za-z0-9ぁ-んァ-ヶｱ-ﾝﾞﾟ]/.test(rawMsg)) { alert("【漢字限定スレ】漢字のみで書き込んでください。"); return; }
 			if (rules.hankaku && /[^\x20-\x7E\uFF61-\uFF9F]/.test(rawMsg)) { alert("【半角限定スレ】半角英数字で書き込んでください。"); return; }
 			if (rules.kote && (!iName.trim() || iName.startsWith('名無しさん'))) { alert("【コテ限定スレ】名前欄に入力してください。"); return; }
-			if (rules.max > 0 && !isNewThread) {
-				if (ths[targetThreadIndex].posts.length >= rules.max) { alert(`このスレッドは最大レス数(${rules.max})に到達しました！`); return; }
-			}
 
-			// ★ 地震スレ判定（ガチ位置情報取得）
 			if (threadTitle.includes('地震') && (!iName.trim() || iName.trim() === '名無しさん')) {
 				let myPref = localStorage.getItem('my_real_pref');
 				if (!myPref) {
@@ -657,7 +628,6 @@
 				iName = `名無しさん＠${myPref}`;
 			}
 			
-			// ★ テキスト変換処理
 			let tmpMsg = rawMsg;
 			if (rules.sugi) tmpMsg = tmpMsg.replace(/です/g, 'だぜぇ').replace(/ます/g, 'だぜぇ').replace(/。/g, 'ワイルドだろぉ？');
 			if (rules.hakata) tmpMsg = tmpMsg.replace(/だから/g, 'やけん').replace(/だよね/g, 'たいね').replace(/だ/g, 'ばい');
@@ -667,7 +637,6 @@
 
 			let parsedMsg = escapeHtml(tmpMsg);
 			
-			// 既存の変換処理
 			parsedMsg = parsedMsg.replace(/fusianasan/g, () => '<span style="color:#888; font-size:11px;">[IP非記録]</span>');
 			parsedMsg = parsedMsg.replace(/!kuji/g, () => { const k = ['<span style="color:red;font-weight:bold;">【大吉】</span>','【吉】','【中吉】','【小吉】','【末吉】','【凶】','<span style="color:blue;font-weight:bold;">【大凶】</span>']; return k[Math.floor(Math.random()*k.length)]; });
 			parsedMsg = parsedMsg.replace(/!dama/g, () => '【' + Math.floor(Math.random()*10000) + '円】');
@@ -708,18 +677,17 @@
 			const nPost = { name: iName.trim() || '名無しさん', email: iEmail.trim(), msg: parsedMsg, time: get2chTimeFormat(), id: dailyId, hideOwner: hOwner };
 			if (iBase64) nPost.image = iBase64; if (aBase64) nPost.audio = aBase64; if (mData) nPost.map = mData; 
 
-			// ★ sage判定
 			const isSage = (iEmail.trim().toLowerCase() === 'sage') || rules.sage;
 
 			if (!isNewThread && targetThreadIndex !== -1) { 
 				ths[targetThreadIndex].posts.push(nPost); 
-				ths[targetThreadIndex].rules = rules; // ルール更新
+				ths[targetThreadIndex].rules = rules; 
 				const act = ths.splice(targetThreadIndex, 1)[0]; 
 				
 				if (!isSage) {
-					ths.unshift(act); // 上げる
+					ths.unshift(act); 
 				} else {
-					ths.splice(targetThreadIndex, 0, act); // そのままの位置（sage）
+					ths.splice(targetThreadIndex, 0, act); 
 				}
 			} else { 
 				let initObj = { id: new Date().getTime(), title: iTitle.trim() || '無題', posts: [nPost], akuList: [], rules: rules };

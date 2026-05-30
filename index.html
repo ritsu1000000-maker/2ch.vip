@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>個人用マルチ掲示板（強震モニタ同期修正・完全版）</title>
+	<title>個人用マルチ掲示板（設定画面・機能OFF対応版）</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<style>
@@ -91,6 +91,10 @@
 		
 		/* ドットフォント強制用クラス */
 		.font-dot { font-family: 'DotGothic16', monospace !important; }
+
+		/* ★ 設定による非表示用クラス */
+		.hide-voice-ui .btn-voice-toggle, .hide-voice-ui .voicha-banner, .hide-voice-ui #voicha_live_panel, .hide-voice-ui .cmd-voicha { display: none !important; }
+		.hide-loc-ui .btn-map-toggle { display: none !important; }
 	</style>
 </head>
 <body>
@@ -110,7 +114,7 @@
 				<p class="title" id="board_name_display">読み込み中...</p>
 				<div style="display:flex; justify-content:space-between; align-items:flex-end;">
 					<span style="font-size: 13px;"><a href="#create_thread_area" style="font-weight:bold; color:#0056b3; margin-right:10px;">[スレ立て]</a>スレッド一覧です。</span>
-					<div><a href="#" onclick="openApiSettings(); return false;" style="font-size: 12px; color: #0056b3; margin-right: 15px; font-weight:bold;">⚙️ API設定</a><a href="#" onclick="clearBbs(); return false;" style="font-size: 12px; color: #CC0000;">全データを初期化</a></div>
+					<div><a href="#" onclick="openSettings(); return false;" style="font-size: 12px; color: #0056b3; margin-right: 15px; font-weight:bold;">⚙️ 設定</a><a href="#" onclick="clearBbs(); return false;" style="font-size: 12px; color: #CC0000;">全データを初期化</a></div>
 				</div>
 			</div></div>
 		</div>
@@ -145,10 +149,10 @@
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!kana')">ア</button>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!dot')">👾ドット</button>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_dai', '!kote')">🛡️コテ限</button>
-						<span style="font-size:11px; color:#666; margin-left:10px;">通常：</span>
-						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_msg', '!voicha')">📶ぬとらじ</button>
-						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_msg', '!voicha:4')">📶ぬとらじ(4人)</button>
-						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_msg', '!voicha:1')">📶ひとらじ</button>
+						<span style="font-size:11px; color:#666; margin-left:10px;" class="cmd-voicha">通常：</span>
+						<button type="button" class="cmd-btn cmd-voicha" onclick="insertCommandTo('bbs_msg', '!voicha')">📶ぬとらじ</button>
+						<button type="button" class="cmd-btn cmd-voicha" onclick="insertCommandTo('bbs_msg', '!voicha:4')">📶ぬとらじ(4人)</button>
+						<button type="button" class="cmd-btn cmd-voicha" onclick="insertCommandTo('bbs_msg', '!voicha:1')">📶ひとらじ</button>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_msg', '!kuji')">🎲おみくじ</button>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('bbs_msg', '!dama')">🧧お年玉</button>
 					</div>
@@ -160,7 +164,23 @@
 		</div>
 	</div>
 
-	<div id="api_settings_modal" class="modal-overlay"><div class="modal-box"><div style="font-weight:bold; font-size:16px; margin-bottom:15px;">⚙️ 外部API設定</div><input type="password" id="api_key_input" style="width:100%; padding:5px; margin-bottom:15px;" placeholder="sk-..."><button class="modal-btn" onclick="closeApiSettings()">キャンセル</button> <button class="modal-btn" style="background:#4a90e2; color:#fff;" onclick="saveApiSettings()">保存する</button></div></div>
+	<div id="settings_modal" class="modal-overlay">
+		<div class="modal-box" style="text-align:left; width: 350px;">
+			<div style="font-weight:bold; font-size:16px; margin-bottom:15px; text-align:center;">⚙️ 設定</div>
+			<div style="margin-bottom:15px; font-size:13px; line-height:1.6;">
+				<label><input type="checkbox" id="cfg_voice"> 🎤 ボイス・生配信機能を完全に隠す</label><br>
+				<label><input type="checkbox" id="cfg_loc"> 📍 位置情報（地図・地震スレ連動）を無効化</label>
+			</div>
+			<div style="margin-bottom:15px;">
+				<label style="font-size:12px; color:#666;">外部APIキー (AI等の拡張用):</label><br>
+				<input type="password" id="api_key_input" style="width:95%; padding:5px; margin-top:3px;" placeholder="sk-...">
+			</div>
+			<div style="text-align:center;">
+				<button class="modal-btn" onclick="closeSettings()">キャンセル</button>
+				<button class="modal-btn" style="background:#4a90e2; color:#fff;" onclick="saveSettings()">保存する</button>
+			</div>
+		</div>
+	</div>
 	
 	<div id="image_gallery_modal" class="modal-overlay" style="align-items: flex-start;"><div style="width:100%;"><div class="modal-header"><span class="modal-close" onclick="closeImageGallery()">✖ 閉じる</span></div><div class="modal-content" id="gallery_content"></div></div></div>
 	
@@ -250,6 +270,10 @@
 		let kmoniInterval = null;
 		let kmoniOffset = 3000;
 
+		// ★設定用変数
+		let cfgVoiceOff = false;
+		let cfgLocOff = false;
+
 		let db, doc_ref, setDoc_ref, onSnapshot_ref, collection_ref, addDoc_ref, deleteDoc_ref, query_ref, where_ref, getDocs_ref, getDoc_ref;
 		let allBoardsCache = { 'main': [], 'game': [], 'music': [], 'memo': [] };
 		let cachedThreads = [];
@@ -261,6 +285,11 @@
 		window.onload = async function() {
 			const ht = document.getElementById('board_name_display'); 
 			if(ht) ht.innerText = boardTitles[currentBoard] || '掲示板';
+
+			// 設定の読み込みと適用
+			cfgVoiceOff = localStorage.getItem('cfg_voice_off') === 'true';
+			cfgLocOff = localStorage.getItem('cfg_loc_off') === 'true';
+			applyConfigUI();
 
 			try {
 				const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js");
@@ -314,9 +343,31 @@
 			} 
 		}
 
-		function openApiSettings() { document.getElementById('api_key_input').value = localStorage.getItem('my_ai_api_key') || ''; document.getElementById('api_settings_modal').style.display = 'flex'; }
-		function closeApiSettings() { document.getElementById('api_settings_modal').style.display = 'none'; }
-		function saveApiSettings() { const k = document.getElementById('api_key_input').value.trim(); if(k) localStorage.setItem('my_ai_api_key', k); else localStorage.removeItem('my_ai_api_key'); closeApiSettings(); }
+		// ★設定機能
+		function openSettings() { 
+			document.getElementById('api_key_input').value = localStorage.getItem('my_ai_api_key') || ''; 
+			document.getElementById('cfg_voice').checked = cfgVoiceOff;
+			document.getElementById('cfg_loc').checked = cfgLocOff;
+			document.getElementById('settings_modal').style.display = 'flex'; 
+		}
+		function closeSettings() { document.getElementById('settings_modal').style.display = 'none'; }
+		function saveSettings() { 
+			const k = document.getElementById('api_key_input').value.trim(); 
+			if(k) localStorage.setItem('my_ai_api_key', k); else localStorage.removeItem('my_ai_api_key'); 
+			
+			cfgVoiceOff = document.getElementById('cfg_voice').checked;
+			cfgLocOff = document.getElementById('cfg_loc').checked;
+			localStorage.setItem('cfg_voice_off', cfgVoiceOff);
+			localStorage.setItem('cfg_loc_off', cfgLocOff);
+			
+			applyConfigUI();
+			closeSettings(); 
+			if(currentThreadId) renderScreen(false);
+		}
+		function applyConfigUI() {
+			if(cfgVoiceOff) document.body.classList.add('hide-voice-ui'); else document.body.classList.remove('hide-voice-ui');
+			if(cfgLocOff) document.body.classList.add('hide-loc-ui'); else document.body.classList.remove('hide-loc-ui');
+		}
 
 		function insertCommandTo(targetId, cmd) {
 			const el = document.getElementById(targetId);
@@ -341,7 +392,6 @@
 			});
 		}
 
-		// ★ 強震モニタ修正：JST基準で同期する探索アルゴリズム
 		function startKmoni() {
 			if(kmoniInterval) clearInterval(kmoniInterval);
 			kmoniOffset = 3000; 
@@ -350,7 +400,6 @@
 				const imgEl = document.getElementById('kmoni_img');
 				if(!imgEl) { clearInterval(kmoniInterval); return; }
 				
-				// JSTで計算
 				const now = new Date();
 				const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
 				const jst = utc + (3600000 * 9) - kmoniOffset;
@@ -368,19 +417,15 @@
 				const tempImg = new Image();
 				tempImg.onload = () => { 
 					imgEl.src = url; 
-					// 成功したら遅延を少し取り戻す（最小2秒）
 					if (kmoniOffset > 2000) kmoniOffset -= 500;
 				};
 				tempImg.onerror = () => { 
-					// エラーの場合は過去に遡る
 					kmoniOffset += 1000; 
-					// あまりに過去になったらリセット
 					if (kmoniOffset > 60000) kmoniOffset = 5000;
 				};
 				tempImg.src = url;
 			};
 			
-			// 最初の1回を即実行
 			fetchKmoni();
 			kmoniInterval = setInterval(fetchKmoni, 1000);
 		}
@@ -425,7 +470,7 @@
 				if (th.voicha) { if (th.voicha.status === 'waiting') wf = '🙇‍♂️配信求む！ '; else wf = '📶 '; }
 				
 				let kmoniHtml = '';
-				if (th.title.includes('地震')) {
+				if (th.title.includes('地震') && !cfgLocOff) {
 					kmoniHtml = `
 					<div style="background:#222; padding:10px; border-radius:4px; margin-bottom:15px; text-align:center; border: 2px solid #555;">
 						<div style="color:#0f0; font-weight:bold; margin-bottom:5px; font-size:14px;">🔴 リアルタイム地震モニター (強震モニタ)</div>
@@ -505,9 +550,9 @@
 						<span style="font-size:11px; color:#666;">コマンド：</span>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('reply_msg', '!add !sage')">➕強制sage</button>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('reply_msg', '!add !dot')">➕👾ドット</button>
-						<span style="font-size:11px; color:#666; margin-left:10px;">通常：</span>
-						<button type="button" class="cmd-btn" onclick="insertCommandTo('reply_msg', '!voicha')">📶ぬとらじ</button>
-						<button type="button" class="cmd-btn" onclick="insertCommandTo('reply_msg', '!kuji')">🎲おみくじ</button>
+						<span style="font-size:11px; color:#666; margin-left:10px;" class="cmd-voicha">通常：</span>
+						<button type="button" class="cmd-btn cmd-voicha" onclick="insertCommandTo('reply_msg', '!voicha')">📶ぬとらじ</button>
+						<button type="button" class="cmd-btn cmd-voicha" onclick="insertCommandTo('reply_msg', '!kuji')">🎲おみくじ</button>
 						<button type="button" class="cmd-btn" onclick="insertCommandTo('reply_msg', '!dama')">🧧お年玉</button>
 					</div>
 
@@ -519,7 +564,7 @@
 				if (hasSavedInput) { document.getElementById('reply_name').value = tmpName; document.getElementById('reply_email').value = tmpEmail; document.getElementById('reply_msg').value = tmpMsg; }
 				if (anim) setTimeout(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }, 50);
 				
-				if (th.title.includes('地震')) { startKmoni(); } 
+				if (th.title.includes('地震') && !cfgLocOff) { setTimeout(startKmoni, 100); } 
 				else if (kmoniInterval) { clearInterval(kmoniInterval); }
 
 			} else {
@@ -645,14 +690,18 @@
 			if (rules.kote && (!iName.trim() || iName.startsWith('名無しさん'))) { alert("【コテ限定スレ】名前欄に入力してください。"); return; }
 
 			if (threadTitle.includes('地震') && (!iName.trim() || iName.trim() === '名無しさん')) {
-				let myPref = localStorage.getItem('my_real_pref');
-				if (!myPref) {
-					myPref = await getRealPrefecture();
-					if (!['端末非対応', '取得エラー', '位置情報拒否', '不明'].includes(myPref)) {
-						localStorage.setItem('my_real_pref', myPref);
+				if (cfgLocOff) {
+					iName = `名無しさん＠位置情報オフ`;
+				} else {
+					let myPref = localStorage.getItem('my_real_pref');
+					if (!myPref) {
+						myPref = await getRealPrefecture();
+						if (!['端末非対応', '取得エラー', '位置情報拒否', '不明'].includes(myPref)) {
+							localStorage.setItem('my_real_pref', myPref);
+						}
 					}
+					iName = `名無しさん＠${myPref}`;
 				}
-				iName = `名無しさん＠${myPref}`;
 			}
 			
 			let tmpMsg = rawMsg;
@@ -672,7 +721,7 @@
 
 			let voichaMatch = rawMsg.match(/!voicha(?::(\d+))?/);
 			let newVoicha = null; let isVoichaTriggered = false;
-			if (voichaMatch) {
+			if (voichaMatch && !cfgVoiceOff) {
 				isVoichaTriggered = true; let limit = voichaMatch[1] ? parseInt(voichaMatch[1]) : null; 
 				newVoicha = { limit: limit, status: 'waiting' };
 				parsedMsg = parsedMsg.replace(/!voicha(?::(\d+))?/g, (match, p1) => { let txt = p1 ? (p1 === '1' ? 'ひとらじ起動' : `ぬとらじ起動（上限${p1}人）`) : 'ぬとらじ起動'; return `${match}<br><span style="color:#ff8c00; font-weight:bold;">★${txt}</span>`; });
@@ -831,6 +880,8 @@
 		}
 
 		async function joinVoicha(isBroadcaster) {
+			if (cfgVoiceOff) { alert("ボイス機能は現在設定でOFFになっています。"); return; }
+			
 			amIBroadcaster = isBroadcaster;
 			isMicMuted = false; isSpeakerMuted = false;
 			activeParticipants = {}; 

@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>個人用マルチ掲示板（リアルタイム閲覧数・本格設定画面 版）</title>
+	<title>個人用マルチ掲示板（NGワード対応・完全版）</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<style>
@@ -72,7 +72,7 @@
 		
 		/* モーダル群 */
 		.modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 2000; align-items: center; justify-content: center; font-family: sans-serif; }
-		.modal-box { background: #fff; padding: 20px; border-radius: 8px; text-align: center; max-width: 90%; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+		.modal-box { background: #fff; padding: 20px; border-radius: 8px; text-align: center; max-width: 90%; max-height: 85vh; overflow-y: auto; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
 		
 		/* ★ ちゃんとした設定画面（トグルスイッチ）用CSS */
 		.settings-section { text-align: left; margin-bottom: 20px; background: #f9f9f9; padding: 15px; border-radius: 6px; border: 1px solid #eee; }
@@ -123,6 +123,9 @@
 		}
 		#top_viewer_panel:hover { background: rgba(0, 0, 0, 0.9); }
 		.hide-max-viewers .stat-max { display: none !important; }
+		
+		/* あぼーん用 */
+		.ng-aboon { color: #aaa; font-style: italic; }
 	</style>
 </head>
 <body>
@@ -223,6 +226,12 @@
 					<span>👁️ 右上に最大閲覧数を表示する</span>
 					<label class="switch"><input type="checkbox" id="cfg_max_view" checked><span class="slider"></span></label>
 				</div>
+			</div>
+
+			<div class="settings-section">
+				<div class="settings-title">🚫 NGワード設定</div>
+				<textarea id="cfg_ng_words_input" style="width:100%; box-sizing:border-box; height:60px; font-size:12px; margin-bottom:5px;" placeholder="非表示にしたい単語を入力（カンマか改行で区切る）"></textarea>
+				<div style="font-size:10px; color:#888;">※指定した単語が含まれるレスは「あぼーん」と表示されます。</div>
 			</div>
 
 			<div class="settings-section" style="margin-bottom:25px;">
@@ -357,6 +366,7 @@
 		let cfgVoiceOff = false;
 		let cfgLocOff = false;
 		let cfgShowMaxView = true;
+		let cfgNgWords = [];
 
 		// ★閲覧用変数
 		let myPresenceId = getDailyId() + '_' + Math.random().toString(36).substr(2, 5);
@@ -377,7 +387,11 @@
 			// 設定の読み込みと適用
 			cfgVoiceOff = localStorage.getItem('cfg_voice_off') === 'true';
 			cfgLocOff = localStorage.getItem('cfg_loc_off') === 'true';
-			cfgShowMaxView = localStorage.getItem('cfg_max_view') !== 'false'; // デフォルトtrue
+			cfgShowMaxView = localStorage.getItem('cfg_max_view') !== 'false';
+			
+			let savedNg = localStorage.getItem('cfg_ng_words') || '';
+			cfgNgWords = savedNg.split(/[\n,]+/).map(w => w.trim()).filter(w => w !== '');
+			
 			applyConfigUI();
 
 			try {
@@ -401,7 +415,6 @@
 				collection_ref = collection; addDoc_ref = addDoc; deleteDoc_ref = deleteDoc;
 				query_ref = query; where_ref = where; getDocs_ref = getDocs;
 
-				// 閲覧数ハートビート開始
 				heartbeatPresence();
 				setInterval(heartbeatPresence, 15000);
 
@@ -427,23 +440,30 @@
 			initOekakiEvents();
 		};
 
+		// ★ NG判定関数
+		function isNgPost(text) {
+			if (cfgNgWords.length === 0 || !text) return false;
+			for (let i = 0; i < cfgNgWords.length; i++) {
+				if (text.includes(cfgNgWords[i])) return true;
+			}
+			return false;
+		}
+
 		// ★ 閲覧数トラッキング（ハートビート）機能
 		async function heartbeatPresence() {
 			if (!db) return;
 			const now = Date.now();
 
-			// --- 板全体のトラッキング ---
 			const bRef = doc_ref(db, "board_stats", currentBoard);
 			try {
 				let bSnap = await getDoc_ref(bRef);
 				let bData = bSnap.exists() ? bSnap.data() : { active_users: {}, total: 0, max: 0, last_active: 0 };
 				
-				// 24時間リセット判定
 				if (now - bData.last_active > 86400000) { bData.active_users = {}; bData.total = 0; bData.max = 0; }
 				
 				let bCurr = 0;
 				for (let uid in bData.active_users) {
-					if (now - bData.active_users[uid] > 30000) delete bData.active_users[uid]; // 30秒以上前は切断扱い
+					if (now - bData.active_users[uid] > 30000) delete bData.active_users[uid];
 					else bCurr++;
 				}
 				if (!bData.active_users[myPresenceId]) { bData.total++; bCurr++; }
@@ -457,7 +477,6 @@
 				document.getElementById('board_max_view').innerText = bData.max;
 			} catch(e){}
 
-			// --- スレ別のトラッキング（おんJ以外でスレを開いている場合） ---
 			if (currentThreadId && currentBoard !== 'memo') {
 				const tRef = doc_ref(db, "thread_stats", currentThreadId);
 				try {
@@ -481,7 +500,6 @@
 			}
 		}
 
-		// ★ 詳細パネルを開く
 		function openStatsModal() {
 			document.getElementById('mod_board_curr').innerText = globalStatsData.board.curr;
 			document.getElementById('mod_board_max').innerText = globalStatsData.board.max;
@@ -516,6 +534,7 @@
 			document.getElementById('cfg_voice').checked = cfgVoiceOff;
 			document.getElementById('cfg_loc').checked = cfgLocOff;
 			document.getElementById('cfg_max_view').checked = cfgShowMaxView;
+			document.getElementById('cfg_ng_words_input').value = localStorage.getItem('cfg_ng_words') || '';
 			document.getElementById('settings_modal').style.display = 'flex'; 
 		}
 		function closeSettings() { document.getElementById('settings_modal').style.display = 'none'; }
@@ -527,13 +546,18 @@
 			cfgLocOff = document.getElementById('cfg_loc').checked;
 			cfgShowMaxView = document.getElementById('cfg_max_view').checked;
 			
+			const ngInput = document.getElementById('cfg_ng_words_input').value;
+			
 			localStorage.setItem('cfg_voice_off', cfgVoiceOff);
 			localStorage.setItem('cfg_loc_off', cfgLocOff);
 			localStorage.setItem('cfg_max_view', cfgShowMaxView);
+			localStorage.setItem('cfg_ng_words', ngInput);
+			
+			cfgNgWords = ngInput.split(/[\n,]+/).map(w => w.trim()).filter(w => w !== '');
 			
 			applyConfigUI();
 			closeSettings(); 
-			if(currentThreadId) renderScreen(false);
+			if(currentThreadId) renderScreen(false); else initHeadline();
 		}
 		function applyConfigUI() {
 			if(cfgVoiceOff) document.body.classList.add('hide-voice-ui'); else document.body.classList.remove('hide-voice-ui');
@@ -610,18 +634,26 @@
 			let all = [];
 			Object.keys(boardTitles).forEach(b => {
 				const ths = allBoardsCache[b];
-				ths.forEach(t => t.posts.forEach((p, i) => all.push({ b: b, bn: boardTitles[b], tid: t.id, tt: t.title, pi: i+1, msg: p.msg, time: p.time, rc: t.posts.length, v: t.voicha })));
+				ths.forEach(t => t.posts.forEach((p, i) => all.push({ b: b, bn: boardTitles[b], tid: t.id, tt: t.title, pi: i+1, msg: p.msg, time: p.time, rc: t.posts.length, v: t.voicha, name: p.name })));
 			});
 			all.sort((a, b) => b.time.localeCompare(a.time));
 			let html = '';
 			all.slice(0, 30).forEach(p => {
 				let tmp = document.createElement("DIV"); tmp.innerHTML = p.msg.replace(/<br>/g, " ");
-				let s = tmp.textContent || ""; if (s.length > 50) s = s.substring(0, 50) + '...';
+				let s = tmp.textContent || "";
+				
+				// ★ NGワード判定（ヘッドライン）
+				if (isNgPost(s) || isNgPost(p.tt) || isNgPost(p.name)) {
+					s = "<span class='ng-aboon'>あぼーん</span>";
+				} else if (s.length > 50) {
+					s = s.substring(0, 50) + '...';
+				}
+				
 				const d = p.time.split(' ');
 				const t = (new Date().getFullYear().toString().slice(-2) + '/' + ('0'+(new Date().getMonth()+1)).slice(-2) + '/' + ('0'+new Date().getDate()).slice(-2) === d[0].substring(0,8)) ? d[1] : d[0].substring(0,8);
 				let wf = '';
 				if (p.v) { if (p.v.status === 'waiting') wf = '🙇‍♂️配信求む！ '; else wf = '📶 '; }
-				html += `<div class="hl-item"><div><span class="hl-meta">${t}</span> <a href="?board=${p.b}&thread=${p.tid}" class="hl-title">【${p.bn}】${wf}${escapeHtml(p.tt)} (${p.rc})</a></div><div class="hl-snippet">&gt;&gt;${p.pi} ${escapeHtml(s)}</div></div>`;
+				html += `<div class="hl-item"><div><span class="hl-meta">${t}</span> <a href="?board=${p.b}&thread=${p.tid}" class="hl-title">【${p.bn}】${wf}${escapeHtml(p.tt)} (${p.rc})</a></div><div class="hl-snippet">&gt;&gt;${p.pi} ${s}</div></div>`;
 			});
 			document.getElementById('headline_content').innerHTML = html || '<div style="padding:10px; color:#666;">まだ書き込みはありません。</div>'; 
 		}
@@ -694,8 +726,8 @@
 				const sid = th.posts[0].id;
 				th.posts.forEach((p, i) => {
 					if (!showAllPostsMode && th.posts.length > 50 && i > 0 && i < th.posts.length - 49) return;
-					const mLink = p.email ? `<a href="mailto:${escapeHtml(p.email)}" class="ch2-name">${escapeHtml(p.name)}</a>` : `<span class="ch2-name">${escapeHtml(p.name)}</span>`;
 					
+					let mLink = p.email ? `<a href="mailto:${escapeHtml(p.email)}" class="ch2-name">${escapeHtml(p.name)}</a>` : `<span class="ch2-name">${escapeHtml(p.name)}</span>`;
 					let isNoIdBoard = (currentBoard === 'main' || currentBoard === 'game' || currentBoard === 'memo');
 					let displayId = p.id || getDailyId();
 					if (th.rules && th.rules.no_id && !isNoIdBoard) {
@@ -704,11 +736,21 @@
 
 					const om = ((displayId === sid) && !p.hideOwner && displayId !== '???') ? `<span class="ch2-owner-mark">[主]</span>` : '';
 					let cls = ((displayId === sid) && i > 0 && displayId !== '???') ? ' owner-reply' : ''; if (anim && i === th.posts.length - 1) cls += ' new-post';
+					
+					// ★ NG判定処理
+					let postMsg = p.msg;
 					let img = p.image ? `<br><a href="${p.image}" target="_blank"><img src="${p.image}" class="ch2-post-image"></a>` : '';
 					let aud = p.audio ? `<br><audio controls src="${p.audio}" style="height:35px;"></audio>` : '';
 					let map = p.map ? `<br><iframe width="100%" height="200" src="https://www.openstreetmap.org/export/embed.html?bbox=${p.map.lng-0.005},${p.map.lat-0.005},${p.map.lng+0.005},${p.map.lat+0.005}&amp;layer=mapnik&amp;marker=${p.map.lat},${p.map.lng}" style="border: 1px solid #ccc; margin-top: 10px; max-width: 400px;"></iframe>` : '';
 					
-					html += `<div class="ch2-post${cls}"><div class="ch2-header">${i + 1}：${mLink}：${p.time} ID:${displayId}${om}</div><div class="ch2-body">${p.msg}${img}${aud}${map}</div></div>`;
+					if (isNgPost(p.msg) || isNgPost(p.name)) {
+						postMsg = "<span class='ng-aboon'>あぼーん</span>";
+						img = ''; aud = ''; map = '';
+						mLink = `<span class="ch2-name ng-aboon">あぼーん</span>`;
+						displayId = '<span class="ng-aboon">あぼーん</span>';
+					}
+					
+					html += `<div class="ch2-post${cls}"><div class="ch2-header">${i + 1}：${mLink}：${p.time} ID:${displayId}${om}</div><div class="ch2-body">${postMsg}${img}${aud}${map}</div></div>`;
 				});
 
 				let cbChecked = isHideOwnerMode ? 'checked' : '';
@@ -740,6 +782,7 @@
 
 			} else {
 				if (kmoniInterval) clearInterval(kmoniInterval); 
+				// ★ NG判定の対象スレを非表示にしたい場合はここで弾けるが、今回は開けるようにしておく
 				if (ths.length === 0) { ca.innerHTML = '<div style="text-align:center; padding: 20px;">スレッドがありません。</div>'; return; }
 				let html = '<ul class="thread_list">'; ths.forEach((t, i) => { 
 					let wf = '';
@@ -747,7 +790,8 @@
 						if (t.voicha.status === 'waiting') wf = '🙇‍♂️配信求む！ ';
 						else wf = '📶 ';
 					}
-					html += `<li>${ths.length - i}: <a href="?board=${currentBoard}&thread=${t.id}">${wf}${escapeHtml(t.title)} (${t.posts.length})</a></li>`; 
+					let tTitle = isNgPost(t.title) ? "<span class='ng-aboon'>あぼーん</span>" : escapeHtml(t.title);
+					html += `<li>${ths.length - i}: <a href="?board=${currentBoard}&thread=${t.id}">${wf}${tTitle} (${t.posts.length})</a></li>`; 
 				}); 
 				ca.innerHTML = html + '</ul>';
 			}

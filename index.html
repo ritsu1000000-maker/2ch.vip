@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>個人用マルチ掲示板（コマンド整理版）</title>
+	<title>個人用マルチ掲示板（強震モニタ同期修正・完全版）</title>
 	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 	<style>
@@ -248,7 +248,7 @@
 		let activeParticipants = {};
 		
 		let kmoniInterval = null;
-		let kmoniOffset = 2000;
+		let kmoniOffset = 3000;
 
 		let db, doc_ref, setDoc_ref, onSnapshot_ref, collection_ref, addDoc_ref, deleteDoc_ref, query_ref, where_ref, getDocs_ref, getDoc_ref;
 		let allBoardsCache = { 'main': [], 'game': [], 'music': [], 'memo': [] };
@@ -341,21 +341,48 @@
 			});
 		}
 
+		// ★ 強震モニタ修正：JST基準で同期する探索アルゴリズム
 		function startKmoni() {
 			if(kmoniInterval) clearInterval(kmoniInterval);
-			kmoniOffset = 2000; 
-			kmoniInterval = setInterval(() => {
+			kmoniOffset = 3000; 
+			
+			const fetchKmoni = () => {
 				const imgEl = document.getElementById('kmoni_img');
 				if(!imgEl) { clearInterval(kmoniInterval); return; }
-				const d = new Date(Date.now() - kmoniOffset);
-				const yyyy = d.getFullYear(); const mm = ('0' + (d.getMonth() + 1)).slice(-2); const dd = ('0' + d.getDate()).slice(-2);
-				const hh = ('0' + d.getHours()).slice(-2); const min = ('0' + d.getMinutes()).slice(-2); const ss = ('0' + d.getSeconds()).slice(-2);
+				
+				// JSTで計算
+				const now = new Date();
+				const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+				const jst = utc + (3600000 * 9) - kmoniOffset;
+				const d = new Date(jst);
+				
+				const yyyy = d.getFullYear(); 
+				const mm = ('0' + (d.getMonth() + 1)).slice(-2); 
+				const dd = ('0' + d.getDate()).slice(-2);
+				const hh = ('0' + d.getHours()).slice(-2); 
+				const min = ('0' + d.getMinutes()).slice(-2); 
+				const ss = ('0' + d.getSeconds()).slice(-2);
+				
 				const url = `https://www.kmoni.bosai.go.jp/data/map_img/RealTimeImg/jma_s/${yyyy}${mm}${dd}/${yyyy}${mm}${dd}${hh}${min}${ss}.jma_s.gif`;
+				
 				const tempImg = new Image();
-				tempImg.onload = () => { imgEl.src = url; };
-				tempImg.onerror = () => { kmoniOffset += 1000; if(kmoniOffset > 60000) kmoniOffset = 2000; };
+				tempImg.onload = () => { 
+					imgEl.src = url; 
+					// 成功したら遅延を少し取り戻す（最小2秒）
+					if (kmoniOffset > 2000) kmoniOffset -= 500;
+				};
+				tempImg.onerror = () => { 
+					// エラーの場合は過去に遡る
+					kmoniOffset += 1000; 
+					// あまりに過去になったらリセット
+					if (kmoniOffset > 60000) kmoniOffset = 5000;
+				};
 				tempImg.src = url;
-			}, 1000);
+			};
+			
+			// 最初の1回を即実行
+			fetchKmoni();
+			kmoniInterval = setInterval(fetchKmoni, 1000);
 		}
 
 		// ==========================================
@@ -461,11 +488,11 @@
 
 					const om = ((displayId === sid) && !p.hideOwner && displayId !== '???') ? `<span class="ch2-owner-mark">[主]</span>` : '';
 					let cls = ((displayId === sid) && i > 0 && displayId !== '???') ? ' owner-reply' : ''; if (anim && i === th.posts.length - 1) cls += ' new-post';
-					let img = p.image ? `<a href="${p.image}" target="_blank"><img src="${p.image}" class="ch2-post-image"></a>` : '';
+					let img = p.image ? `<br><a href="${p.image}" target="_blank"><img src="${p.image}" class="ch2-post-image"></a>` : '';
 					let aud = p.audio ? `<br><audio controls src="${p.audio}" style="height:35px;"></audio>` : '';
 					let map = p.map ? `<br><iframe width="100%" height="200" src="https://www.openstreetmap.org/export/embed.html?bbox=${p.map.lng-0.005},${p.map.lat-0.005},${p.map.lng+0.005},${p.map.lat+0.005}&amp;layer=mapnik&amp;marker=${p.map.lat},${p.map.lng}" style="border: 1px solid #ccc; margin-top: 10px; max-width: 400px;"></iframe>` : '';
 					
-					html += `<div class="ch2-post${cls}"><div class="ch2-header">${i + 1} ：${mLink} ：${p.time} ID:${displayId}${om}</div><div class="ch2-body">${img}${p.msg}${aud}${map}</div></div>`;
+					html += `<div class="ch2-post${cls}"><div class="ch2-header">${i + 1} ：${mLink} ：${p.time} ID:${displayId}${om}</div><div class="ch2-body">${p.msg}${img}${aud}${map}</div></div>`;
 				});
 
 				let cbChecked = isHideOwnerMode ? 'checked' : '';
@@ -492,7 +519,7 @@
 				if (hasSavedInput) { document.getElementById('reply_name').value = tmpName; document.getElementById('reply_email').value = tmpEmail; document.getElementById('reply_msg').value = tmpMsg; }
 				if (anim) setTimeout(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }, 50);
 				
-				if (th.title.includes('地震')) { setTimeout(startKmoni, 100); } 
+				if (th.title.includes('地震')) { startKmoni(); } 
 				else if (kmoniInterval) { clearInterval(kmoniInterval); }
 
 			} else {
